@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-split
 #SBATCH --array=0-5
+#SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
 #SBATCH --nodes=1 # Number of nodes
@@ -25,11 +26,12 @@ set -euo pipefail
 #   sbatch slurm/create_dataset_splits.sbatch
 #
 # Optional environment overrides:
-#   OUTPUT_ROOT=$SCRATCH/zero-hack/generated
+#   OUTPUT_ROOT=data/generated
 #   FAMILIES="mosfet igbt ic"
 #   FORCE=1
 #   SPLIT_SEED=1729
 #   UV_CACHE_DIR=$SCRATCH/.cache/uv
+#   UV_INSTALL_DIR=$SCRATCH/.local/bin
 #   LEONARDO_LOAD_MODULES=0
 
 if [[ -n "${SCRATCH:-}" ]]; then
@@ -43,6 +45,8 @@ fi
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
+source slurm/setup_uv.sh
+
 DATASETS=(
   valid_s005k
   valid_s010k
@@ -54,7 +58,7 @@ DATASETS=(
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 DATASET="${DATASETS[$TASK_ID]}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRATCH:-data/generated}/zero-hack/generated}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 FAMILIES="${FAMILIES:-mosfet igbt ic}"
 SPLIT_SEED="${SPLIT_SEED:-1729}"
 FORCE="${FORCE:-0}"

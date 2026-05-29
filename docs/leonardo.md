@@ -10,12 +10,12 @@ s_tra_ncc
 
 ## Storage
 
-Use the repository checkout for code and `$SCRATCH` for generated datasets.
+Keep the repository checkout under `$SCRATCH` on Leonardo. The Slurm scripts write generated datasets inside the repo by default.
 
 Default generated-data location in the Slurm scripts:
 
 ```text
-$SCRATCH/zero-hack/generated
+data/generated
 ```
 
 The generated CSVs are large and are ignored by git.
@@ -41,6 +41,7 @@ Generation and splitting run inside Slurm jobs, not on the login node.
 The job scripts request one Leonardo Booster node with:
 
 ```text
+account: euhpc_d30_031
 partition: boost_usr_prod
 reservation: s_tra_ncc
 nodes: 1
@@ -61,8 +62,8 @@ mosfet, igbt, ic
 Useful overrides:
 
 ```bash
-# Store generated data somewhere else.
-sbatch --export=ALL,OUTPUT_ROOT=$WORK/zero-hack/generated slurm/generate_valid_datasets.sbatch
+# Store generated data somewhere else, if needed.
+sbatch --export=ALL,OUTPUT_ROOT=$SCRATCH/zero-hack-data/generated slurm/generate_valid_datasets.sbatch
 
 # Regenerate existing files.
 sbatch --export=ALL,FORCE=1 slurm/generate_valid_datasets.sbatch
@@ -88,8 +89,8 @@ sbatch slurm/create_dataset_splits.sbatch
 Useful overrides:
 
 ```bash
-# Split data stored under $WORK.
-sbatch --export=ALL,OUTPUT_ROOT=$WORK/zero-hack/generated slurm/create_dataset_splits.sbatch
+# Split data stored outside the repo.
+sbatch --export=ALL,OUTPUT_ROOT=$SCRATCH/zero-hack-data/generated slurm/create_dataset_splits.sbatch
 
 # Split only one family, useful for testing.
 sbatch --array=0-0 --export=ALL,FAMILIES=mosfet slurm/create_dataset_splits.sbatch
@@ -117,6 +118,51 @@ outputs/slurm/
 ```
 
 ## Software
+
+The Slurm jobs source:
+
+```bash
+slurm/setup_uv.sh
+```
+
+This script:
+
+- installs `uv` under `$SCRATCH/.local/bin` if `uv` is not available
+- uses `$SCRATCH/.cache/uv` as the uv cache
+- runs `uv sync --python 3.12`
+
+The first run may need network access to install `uv` and Python dependencies.
+Leonardo compute nodes do not have direct internet access. If `uv` is not already
+installed under `$SCRATCH/.local/bin`, either install it once beforehand or submit
+with proxy variables exported:
+
+```bash
+sbatch \
+  --export=ALL,HTTP_PROXY=...,HTTPS_PROXY=...,http_proxy=...,https_proxy=... \
+  slurm/generate_valid_datasets.sbatch
+```
+
+Do not commit proxy credentials to the repository.
+
+You can run setup once from a login node:
+
+```bash
+./slurm/setup_uv.sh
+```
+
+Or run setup as a Slurm job:
+
+```bash
+sbatch slurm/setup_uv.sbatch
+```
+
+For Slurm-based setup, pass proxy variables if `uv` is not already installed:
+
+```bash
+sbatch \
+  --export=ALL,HTTP_PROXY=...,HTTPS_PROXY=...,http_proxy=...,https_proxy=... \
+  slurm/setup_uv.sbatch
+```
 
 The Slurm scripts try to load:
 

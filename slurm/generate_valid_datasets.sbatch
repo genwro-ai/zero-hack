@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-data
 #SBATCH --array=0-17%6
+#SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
 #SBATCH --nodes=1 # Number of nodes
@@ -25,10 +26,11 @@ set -euo pipefail
 #   sbatch slurm/generate_valid_datasets.sbatch
 #
 # Optional environment overrides:
-#   OUTPUT_ROOT=$SCRATCH/zero-hack/generated
+#   OUTPUT_ROOT=data/generated
 #   FORCE=1
 #   VALIDATE_AFTER=1
 #   UV_CACHE_DIR=$SCRATCH/.cache/uv
+#   UV_INSTALL_DIR=$SCRATCH/.local/bin
 #   LEONARDO_LOAD_MODULES=0
 
 if [[ -n "${SCRATCH:-}" ]]; then
@@ -42,6 +44,8 @@ fi
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
+source slurm/setup_uv.sh
+
 SIZES=(5000 10000 20000 100000 500000 1000000)
 FAMILIES=(mosfet igbt ic)
 
@@ -51,7 +55,7 @@ FAMILY_INDEX="$((TASK_ID % ${#FAMILIES[@]}))"
 
 COUNT="${SIZES[$SIZE_INDEX]}"
 FAMILY="${FAMILIES[$FAMILY_INDEX]}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRATCH:-data/generated}/zero-hack/generated}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 GENERATOR="${GENERATOR:-data/industrial/generate_sequences.py}"
 FORCE="${FORCE:-0}"
 VALIDATE_AFTER="${VALIDATE_AFTER:-0}"
