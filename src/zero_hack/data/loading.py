@@ -1,7 +1,3 @@
-"""Small helpers for loading the Industrial AI sequence data."""
-
-from __future__ import annotations
-
 import csv
 from pathlib import Path
 
