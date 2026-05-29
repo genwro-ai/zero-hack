@@ -1,9 +1,14 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #SBATCH --job-name=zero-hack-split
 #SBATCH --array=0-5
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=8G
-#SBATCH --time=02:00:00
+#SBATCH --partition=boost_usr_prod
+#SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
+#SBATCH --nodes=1 # Number of nodes
+#SBATCH --ntasks-per-node=1 # Number of `srun` tasks executed per node
+#SBATCH --gpus-per-task=1 # Number of GPUs (up to 4 on Leonardo)
+#SBATCH --mem=120GB # Fair share on Leonardo: 120GB * gpus-per-task
+#SBATCH --cpus-per-task=8 # Fair share on Leonardo: 8 * gpus-per-task
+#SBATCH --time=0:30:00 # Time limit in HH:MM:SS, up to 24:00:00
 #SBATCH --output=outputs/slurm/%x_%A_%a.out
 #SBATCH --error=outputs/slurm/%x_%A_%a.err
 
@@ -16,14 +21,25 @@ set -euo pipefail
 #   data/generated/valid_s005k/raw/IGBT.csv
 #   data/generated/valid_s005k/raw/IC.csv
 #
-# Submit through:
-#   scripts/submit_create_dataset_splits.sh
+# Submit with:
+#   sbatch slurm/create_dataset_splits.sbatch
 #
 # Optional environment overrides:
-#   OUTPUT_ROOT=/scratch/$USER/zero-hack/generated
+#   OUTPUT_ROOT=$SCRATCH/zero-hack/generated
 #   FAMILIES="mosfet igbt ic"
 #   FORCE=1
 #   SPLIT_SEED=1729
+#   UV_CACHE_DIR=$SCRATCH/.cache/uv
+#   LEONARDO_LOAD_MODULES=0
+
+if [[ -n "${SCRATCH:-}" ]]; then
+  export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRATCH/.cache/uv}"
+fi
+
+if [[ "${LEONARDO_LOAD_MODULES:-1}" == "1" ]] && command -v module >/dev/null 2>&1; then
+  module load python/3.11.7 || true
+  module load profile/deeplrn || true
+fi
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
@@ -38,10 +54,11 @@ DATASETS=(
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 DATASET="${DATASETS[$TASK_ID]}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${SCRATCH:-data/generated}/zero-hack/generated}"
 FAMILIES="${FAMILIES:-mosfet igbt ic}"
 SPLIT_SEED="${SPLIT_SEED:-1729}"
 FORCE="${FORCE:-0}"
+RUNNER="${RUNNER:-srun}"
 
 INPUT_DIR="${OUTPUT_ROOT}/${DATASET}/raw"
 OUTPUT_DIR="${OUTPUT_ROOT}/${DATASET}/splits"
@@ -63,6 +80,6 @@ fi
 printf "task_id=%s dataset=%s input=%s output=%s seed=%s\n" \
   "$TASK_ID" "$DATASET" "$INPUT_DIR" "$OUTPUT_DIR" "$SPLIT_SEED"
 
-time uv run python scripts/create_dataset_splits.py "${ARGS[@]}"
+time "$RUNNER" uv run python scripts/create_dataset_splits.py "${ARGS[@]}"
 
 find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*.csv" -exec ls -lh {} +

@@ -209,7 +209,8 @@ zero_one_hack_01/
 
 # Regenerable generated datasets and cluster logs.
 data/generated/
-outputs/slurm/
+outputs/slurm/*
+!outputs/slurm/.gitkeep
 
 # Ruff stuff:
 .ruff_cache/
