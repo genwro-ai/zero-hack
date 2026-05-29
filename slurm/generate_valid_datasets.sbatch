@@ -16,7 +16,7 @@ set -euo pipefail
 
 # Slurm array job for generating valid Industrial AI datasets.
 #
-# It creates the same layout as scripts/generate_valid_datasets.sh:
+# It creates the same layout as local_scripts/generate_valid_datasets.sh:
 #   data/generated/valid_s005k/raw/MOSFET.csv
 #   data/generated/valid_s010k/raw/MOSFET.csv
 #   ...

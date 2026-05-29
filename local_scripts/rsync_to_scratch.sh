@@ -4,7 +4,7 @@ set -euo pipefail
 # Sync this repository to a directory under $SCRATCH on a remote server.
 #
 # Usage:
-#   scripts/rsync_to_scratch.sh <leonardo-user>
+#   local_scripts/rsync_to_scratch.sh <leonardo-user>
 #
 # Defaults to LEONARDO:
 #   REMOTE_HOST=login.leonardo.cineca.it
