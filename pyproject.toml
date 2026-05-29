@@ -1,0 +1,41 @@
+[project]
+name = "zero-hack"
+version = "0.1.0"
+description = "Zero One Hack_01 Industrial AI track solution"
+authors = [
+    { name = "Marcin Kostrzewa", email = "manik24901@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "ruff>=0.15.15",
+]
+
+[project.scripts]
+zero-hack-info = "zero_hack:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "data/industrial/*.csv",
+    "data/industrial/generate_sequences.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.3,<0.10.0"]
+build-backend = "uv_build"
