@@ -1,0 +1,162 @@
+{
+  "next_step": {
+    "ngram": {
+      "all": {
+        "n": 600,
+        "top1": 0.7133,
+        "top3": 0.9967,
+        "top5": 1.0,
+        "mrr": 0.8536
+      },
+      "ic": {
+        "n": 200,
+        "top1": 0.66,
+        "top3": 0.99,
+        "top5": 1.0,
+        "mrr": 0.8233
+      },
+      "igbt": {
+        "n": 200,
+        "top1": 0.76,
+        "top3": 1.0,
+        "top5": 1.0,
+        "mrr": 0.8792
+      },
+      "mosfet": {
+        "n": 200,
+        "top1": 0.72,
+        "top3": 1.0,
+        "top5": 1.0,
+        "mrr": 0.8583
+      }
+    },
+    "most_frequent": {
+      "all": {
+        "n": 600,
+        "top1": 0.7067,
+        "top3": 0.995,
+        "top5": 1.0,
+        "mrr": 0.8501
+      },
+      "ic": {
+        "n": 200,
+        "top1": 0.685,
+        "top3": 0.99,
+        "top5": 1.0,
+        "mrr": 0.8367
+      },
+      "igbt": {
+        "n": 200,
+        "top1": 0.695,
+        "top3": 1.0,
+        "top5": 1.0,
+        "mrr": 0.845
+      },
+      "mosfet": {
+        "n": 200,
+        "top1": 0.74,
+        "top3": 0.995,
+        "top5": 1.0,
+        "mrr": 0.8688
+      }
+    }
+  },
+  "completion": {
+    "ngram": {
+      "all": {
+        "n": 600,
+        "exact_match": 0.005,
+        "norm_edit_distance": 0.2243,
+        "token_accuracy": 0.4012,
+        "block_accuracy": 0.9912
+      },
+      "ic": {
+        "n": 200,
+        "exact_match": 0.0,
+        "norm_edit_distance": 0.2809,
+        "token_accuracy": 0.326,
+        "block_accuracy": 0.9893
+      },
+      "igbt": {
+        "n": 200,
+        "exact_match": 0.0,
+        "norm_edit_distance": 0.2271,
+        "token_accuracy": 0.42,
+        "block_accuracy": 0.9883
+      },
+      "mosfet": {
+        "n": 200,
+        "exact_match": 0.015,
+        "norm_edit_distance": 0.1649,
+        "token_accuracy": 0.4577,
+        "block_accuracy": 0.9962
+      }
+    },
+    "most_frequent": {
+      "all": {
+        "n": 600,
+        "exact_match": 0.0017,
+        "norm_edit_distance": 0.2458,
+        "token_accuracy": 0.4276,
+        "block_accuracy": 0.9833
+      },
+      "ic": {
+        "n": 200,
+        "exact_match": 0.0,
+        "norm_edit_distance": 0.2997,
+        "token_accuracy": 0.3456,
+        "block_accuracy": 0.9856
+      },
+      "igbt": {
+        "n": 200,
+        "exact_match": 0.0,
+        "norm_edit_distance": 0.2714,
+        "token_accuracy": 0.4079,
+        "block_accuracy": 0.9811
+      },
+      "mosfet": {
+        "n": 200,
+        "exact_match": 0.005,
+        "norm_edit_distance": 0.1662,
+        "token_accuracy": 0.5292,
+        "block_accuracy": 0.9833
+      }
+    }
+  },
+  "anomaly": {
+    "ngram": {
+      "n": 300,
+      "positive_class": "anomaly (IS_VALID=0)",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion_matrix": {
+        "tp": 150,
+        "fp": 0,
+        "tn": 150,
+        "fn": 0
+      },
+      "roc_auc": 1.0,
+      "rule_attribution_accuracy": 1.0,
+      "n_detected_violations": 150
+    },
+    "most_frequent": {
+      "n": 300,
+      "positive_class": "anomaly (IS_VALID=0)",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "confusion_matrix": {
+        "tp": 150,
+        "fp": 0,
+        "tn": 150,
+        "fn": 0
+      },
+      "roc_auc": 1.0,
+      "rule_attribution_accuracy": 1.0,
+      "n_detected_violations": 150
+    }
+  }
+}
