@@ -51,5 +51,8 @@ class TransformerModel(nn.Module):
             mask=causal_mask,
             src_key_padding_mask=src_key_padding_mask,
         )
-        last_hidden = encoded[:, -1, :]
+        positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0)
+        last_valid = torch.where(attention_mask, positions, 0).max(dim=1).values
+        batch_idx = torch.arange(encoded.size(0), device=input_ids.device)
+        last_hidden = encoded[batch_idx, last_valid, :]
         return self.head(last_hidden)

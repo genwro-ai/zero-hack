@@ -49,7 +49,11 @@ RSYNC_ARGS=(
   --exclude "__pycache__/"
   --exclude "*.pyc"
   --exclude "data/generated/"
+  --exclude "outputs/models/"
+  --exclude "outputs/metrics/"
+  --exclude "outputs/preds/"
   --exclude "outputs/slurm/"
+  --exclude "outputs/slurm_runs/"
 )
 
 if [[ "$DELETE" == "1" ]]; then
