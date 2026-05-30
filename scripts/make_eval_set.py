@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import random
 from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
 from zero_hack.eval.io import join_steps
 from zero_hack.eval.validator import first_violated_rule, is_valid
-from zero_hack.models.common import DEFAULT_SPLITS_DIR, family_test_split, load_split_records
+from zero_hack.models.common import DEFAULT_SPLITS_DIR, FAMILIES, load_split_records
 
 _CLEAN_HINTS = ("CLEAN", "RCA", "HF DIP", "RINSE", "DRY WAFER")
 
@@ -66,13 +67,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splits-dir", default=str(DEFAULT_SPLITS_DIR))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
+    parser.add_argument(
+        "--eval-families",
+        nargs="+",
+        choices=FAMILIES,
+        default=None,
+        help="Family test splits to include. Defaults to all families.",
+    )
     parser.add_argument("--n-valid", type=int, default=100, help="Sequences/family for Tasks 1&2.")
     parser.add_argument("--fractions", type=float, nargs="+", default=[0.6, 0.8])
-    parser.add_argument("--n-anomaly", type=int, default=100, help="Sequences/family for Task 3.")
-    parser.add_argument("--invalid-frac", type=float, default=0.5)
+    parser.add_argument(
+        "--n-anomaly-valid",
+        type=int,
+        default=200,
+        help="Valid sequences/family for Task 3.",
+    )
+    parser.add_argument(
+        "--n-anomaly-invalid",
+        type=int,
+        default=129,
+        help="Invalid sequences/family for Task 3.",
+    )
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--split", default="test", choices=("train", "valid", "test"))
-    parser.add_argument("--out-dir", default=str(PROJECT_ROOT / "outputs" / "eval"))
+    parser.add_argument("--out-dir", default=str(PROJECT_ROOT / "data" / "eval" / "default"))
     return parser.parse_args()
 
 
@@ -86,8 +104,15 @@ def main() -> None:
         holdout_family=args.holdout_family,
         limit_per_family=args.limit_per_family,
     )
-    split = family_test_split(args.holdout_family) if args.holdout_family else args.split
-    records = bundle.records[split]
+    eval_families = tuple(args.eval_families or FAMILIES)
+    if args.eval_families:
+        split = "family_tests"
+        records = []
+        for family in eval_families:
+            records.extend(bundle.records[f"test_{family}"])
+    else:
+        split = args.split
+        records = bundle.records[split]
     by_family: dict[str, list] = {}
     for rec in records:
         by_family.setdefault(rec.family, []).append(rec)
@@ -111,15 +136,13 @@ def main() -> None:
                 nextstep_truth.append([example_id, steps[cut]])
                 completion_truth.append([example_id, join_steps(steps[cut:])])
 
-    n_invalid_target = int(args.n_anomaly * args.invalid_frac)
     for family, recs in sorted(by_family.items()):
         kept_valid = kept_invalid = 0
         for rec in recs:
-            if kept_valid + kept_invalid >= args.n_anomaly:
+            if kept_valid >= args.n_anomaly_valid and kept_invalid >= args.n_anomaly_invalid:
                 break
             steps = list(rec.steps)
-            want_invalid = kept_invalid < n_invalid_target
-            if want_invalid:
+            if kept_invalid < args.n_anomaly_invalid:
                 corrupted = _corrupt(steps, rng)
                 if corrupted is None:
                     continue
@@ -128,7 +151,7 @@ def main() -> None:
                 anomaly_rows.append([example_id, family, join_steps(seq)])
                 anomaly_truth.append([example_id, 0, rule])
                 kept_invalid += 1
-            else:
+            elif kept_valid < args.n_anomaly_valid:
                 example_id = f"{family}_{rec.sequence_id}_ok"
                 anomaly_rows.append([example_id, family, join_steps(steps)])
                 anomaly_truth.append([example_id, 1, ""])
@@ -148,6 +171,26 @@ def main() -> None:
     _write(out_dir / "completion_truth.csv", ["EXAMPLE_ID", "TRUE_SEQUENCE"], completion_truth)
     _write(out_dir / "eval_input_anomaly.csv", ["EXAMPLE_ID", "FAMILY", "SEQUENCE"], anomaly_rows)
     _write(out_dir / "anomaly_truth.csv", ["EXAMPLE_ID", "IS_VALID", "RULE"], anomaly_truth)
+    (out_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "splits_dir": str(Path(args.splits_dir)),
+                "split": split,
+                "holdout_family": args.holdout_family,
+                "train_families": list(bundle.train_families),
+                "eval_families": list(eval_families),
+                "evaluated_families": sorted(by_family),
+                "n_valid_per_family": args.n_valid,
+                "completion_fractions": args.fractions,
+                "n_anomaly_valid_per_family": args.n_anomaly_valid,
+                "n_anomaly_invalid_per_family": args.n_anomaly_invalid,
+                "seed": args.seed,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     n_bad = sum(1 for r in anomaly_truth if r[1] == 0)
     print(f"counts: {bundle.counts()}")
