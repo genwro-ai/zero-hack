@@ -10,7 +10,7 @@ from pathlib import Path
 from zero_hack import PROJECT_ROOT
 from zero_hack.eval import io
 from zero_hack.eval.validator import first_violated_rule, validate_sequence
-from zero_hack.models.common import DEFAULT_RAW_DIR, load_record_splits
+from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records
 from zero_hack.models.most_frequent import MostFrequentModel
 from zero_hack.models.ngram import NGramModel
 from zero_hack.models.xgboost import XGBoostNextStep
@@ -76,9 +76,7 @@ def parse_args() -> argparse.Namespace:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--model", default="ngram", choices=("ngram", "most_frequent", "xgboost"))
-    parser.add_argument("--raw-dir", default=str(DEFAULT_RAW_DIR))
-    parser.add_argument("--industrial-dir", default=None)
-    parser.add_argument("--no-include-industrial", action="store_true")
+    parser.add_argument("--splits-dir", default=str(DEFAULT_SPLITS_DIR))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
     parser.add_argument("--eval-dir", default=str(PROJECT_ROOT / "outputs" / "eval"))
@@ -105,10 +103,8 @@ def main() -> None:
         Path(args.out_dir) if args.out_dir else PROJECT_ROOT / "outputs" / "preds" / args.model
     )
 
-    bundle = load_record_splits(
-        args.raw_dir,
-        industrial_dir=args.industrial_dir,
-        include_industrial=not args.no_include_industrial,
+    bundle = load_split_records(
+        args.splits_dir,
         holdout_family=args.holdout_family,
         limit_per_family=args.limit_per_family,
     )

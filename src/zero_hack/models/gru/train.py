@@ -3,12 +3,12 @@ from __future__ import annotations
 import argparse
 
 from zero_hack.models.common import (
-    DEFAULT_RAW_DIR,
+    DEFAULT_SPLITS_DIR,
     DataBundle,
     TrainConfig,
     count_parameters,
     evaluate_model,
-    load_record_splits,
+    load_split_records,
     make_loaders,
     pick_device,
     train_model,
@@ -27,9 +27,7 @@ def build_model(bundle: DataBundle, config: GRUConfig) -> GRUModel:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the small GRU baseline.")
-    parser.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
-    parser.add_argument("--industrial-dir", default=None)
-    parser.add_argument("--no-include-industrial", action="store_true")
+    parser.add_argument("--splits-dir", default=DEFAULT_SPLITS_DIR)
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
     parser.add_argument("--epochs", type=int, default=1)
@@ -46,10 +44,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    bundle = load_record_splits(
-        raw_dir=args.raw_dir,
-        industrial_dir=args.industrial_dir or None,
-        include_industrial=not args.no_include_industrial,
+    bundle = load_split_records(
+        splits_dir=args.splits_dir,
         holdout_family=args.holdout_family,
         limit_per_family=args.limit_per_family,
     )

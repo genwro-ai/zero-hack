@@ -69,9 +69,9 @@ mosfet_sequences = load_family_sequences("mosfet")
 
 ## Baselines
 
-Symbolic next-step baselines live under `src/zero_hack/models/`. They share the
-same deterministic, leakage-free train/valid/test splits and metrics via
-`zero_hack.models.common`, so every model is compared on identical inputs.
+Symbolic next-step baselines live under `src/zero_hack/models/`. They read the
+train/valid/test CSVs produced by `scripts/create_dataset_splits.py`, so every
+model is compared on the same split artifacts.
 
 - **Most frequent** (`models/most_frequent/`): counting baseline conditioned on
   `(family, position bucket, previous step)` with stupid-backoff to coarser
@@ -88,7 +88,9 @@ uv run python -m zero_hack.models.most_frequent.train
 uv run python -m zero_hack.models.ngram.train
 ```
 
-Use `--limit-per-family N` for a fast smoke run.
+Use `--splits-dir data/generated/valid_s100k/splits` to select a dataset size,
+`--holdout-family ic` for the two-families-train / third-family-test setup, and
+`--limit-per-family N` for a fast smoke run.
 
 ## Evaluation
 

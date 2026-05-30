@@ -13,17 +13,12 @@ from zero_hack.data import (
     SequenceRecord,
     Vocabulary,
     build_vocabulary,
-    dedupe_records,
-    load_industrial_family_records,
-    load_raw_family_records,
+    load_sequence_records,
     make_torch_dataloader,
-    namespace_sequence_ids,
 )
 from zero_hack.models.topk import TopKAccumulator
-from zero_hack.splits import SPLIT_NAMES, split_for
 
-DEFAULT_RAW_DIR = PROJECT_ROOT / "data" / "generated" / "valid_s005k" / "raw"
-DEFAULT_INDUSTRIAL_DIR = PROJECT_ROOT / "data" / "industrial"
+DEFAULT_SPLITS_DIR = PROJECT_ROOT / "data" / "generated" / "valid_s005k" / "splits"
 FAMILIES = tuple(FAMILY_FILE_NAMES)
 TEST_SPLIT_PREFIX = "test_"
 
@@ -51,18 +46,14 @@ class DataBundle:
         )
 
 
-def load_record_splits(
-    raw_dir: str | Path = DEFAULT_RAW_DIR,
+def load_split_records(
+    splits_dir: str | Path = DEFAULT_SPLITS_DIR,
     *,
-    industrial_dir: str | Path | None = DEFAULT_INDUSTRIAL_DIR,
-    include_industrial: bool = True,
     families: tuple[str, ...] = FAMILIES,
     holdout_family: str | None = None,
     limit_per_family: int | None = None,
 ) -> DataBundle:
-    """Load raw CSVs, dedupe, and split by sequence hash."""
-    raw_dir = Path(raw_dir)
-    industrial_dir = DEFAULT_INDUSTRIAL_DIR if industrial_dir is None else Path(industrial_dir)
+    splits_dir = Path(splits_dir)
     families = tuple(family.lower() for family in families)
     if holdout_family is not None:
         holdout_family = holdout_family.lower()
@@ -72,35 +63,18 @@ def load_record_splits(
     if not train_families:
         raise ValueError("At least one training family is required")
 
-    records: list[SequenceRecord] = []
+    by_split: dict[str, list[SequenceRecord]] = {
+        "train": _load_family_splits(splits_dir, train_families, "train", limit_per_family),
+        "valid": _load_family_splits(splits_dir, train_families, "valid", limit_per_family),
+        "test": _load_family_splits(splits_dir, train_families, "test", limit_per_family),
+    }
     for family in families:
-        fam_records = namespace_sequence_ids(load_raw_family_records(raw_dir, family), "generated")
-        if include_industrial:
-            fam_records = (
-                namespace_sequence_ids(
-                    load_industrial_family_records(industrial_dir, family),
-                    "industrial",
-                )
-                + fam_records
-            )
-        if limit_per_family is not None:
-            fam_records = fam_records[:limit_per_family]
-        records.extend(fam_records)
-
-    records = dedupe_records(records)
-
-    by_split: dict[str, list[SequenceRecord]] = {name: [] for name in SPLIT_NAMES}
-    for family in families:
-        by_split[family_test_split(family)] = []
-
-    for record in records:
-        split = split_for(record.family, list(record.steps))
-        if split == "test":
-            by_split[family_test_split(record.family)].append(record)
-            if record.family != holdout_family:
-                by_split["test"].append(record)
-        elif record.family != holdout_family:
-            by_split[split].append(record)
+        by_split[family_test_split(family)] = _load_family_splits(
+            splits_dir,
+            (family,),
+            "test",
+            limit_per_family,
+        )
 
     vocabulary = build_vocabulary(by_split["train"])
     return DataBundle(
@@ -109,6 +83,22 @@ def load_record_splits(
         train_families=train_families,
         holdout_family=holdout_family,
     )
+
+
+def _load_family_splits(
+    splits_dir: Path,
+    families: tuple[str, ...],
+    split: str,
+    limit_per_family: int | None,
+) -> list[SequenceRecord]:
+    records: list[SequenceRecord] = []
+    for family in families:
+        path = splits_dir / f"{FAMILY_FILE_NAMES[family].removesuffix('.csv')}_{split}.csv"
+        family_records = load_sequence_records(path)
+        if limit_per_family is not None:
+            family_records = family_records[:limit_per_family]
+        records.extend(family_records)
+    return records
 
 
 def make_dataset(
