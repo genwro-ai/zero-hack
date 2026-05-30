@@ -1,4 +1,6 @@
 import random
+import warnings
+from collections import Counter
 from dataclasses import dataclass
 
 from zero_hack.data import SequenceRecord
@@ -72,25 +74,56 @@ def build_rule_stratified_corruptions(
     rng.shuffle(records)
     targets = _balanced_rule_targets(n_invalid, rng)
     examples: list[CorruptedExample] = []
+    unused_indices = list(range(len(records)))
+    unrealized_targets: Counter[str] = Counter()
 
     for rule in targets:
-        start = rng.randrange(len(records))
-        for offset in range(len(records)):
-            record = records[(start + offset) % len(records)]
-            corrupted = corrupt_steps(list(record.steps), rng, target_rule=rule)
-            if corrupted is None:
-                continue
-            steps, observed_rule = corrupted
-            examples.append(
-                CorruptedExample(
-                    family=record.family,
-                    sequence_id=record.sequence_id,
-                    steps=steps,
-                    rule=observed_rule,
-                )
-            )
-            break
+        found = _corrupt_first_available(records, unused_indices, rng, rule)
+        if found is None:
+            wrap_indices = list(range(len(records)))
+            rng.shuffle(wrap_indices)
+            found = _corrupt_first_available(records, wrap_indices, rng, rule)
+        if found is None:
+            unrealized_targets[rule] += 1
+            continue
+
+        record_index, example = found
+        examples.append(example)
+        if record_index in unused_indices:
+            unused_indices.remove(record_index)
+    if unrealized_targets:
+        missing = ", ".join(f"{rule}={count}" for rule, count in sorted(unrealized_targets.items()))
+        warnings.warn(
+            f"Only generated {len(examples)}/{n_invalid} invalid corruptions; "
+            f"unrealized target rules: {missing}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return examples
+
+
+def _corrupt_first_available(
+    records: list[SequenceRecord],
+    indices: list[int],
+    rng: random.Random,
+    rule: str,
+) -> tuple[int, CorruptedExample] | None:
+    for record_index in list(indices):
+        record = records[record_index]
+        corrupted = corrupt_steps(list(record.steps), rng, target_rule=rule)
+        if corrupted is None:
+            continue
+        steps, observed_rule = corrupted
+        return (
+            record_index,
+            CorruptedExample(
+                family=record.family,
+                sequence_id=record.sequence_id,
+                steps=steps,
+                rule=observed_rule,
+            ),
+        )
+    return None
 
 
 def _balanced_rule_targets(n_invalid: int, rng: random.Random) -> list[str]:

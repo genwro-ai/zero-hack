@@ -10,7 +10,6 @@ import random
 from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
-from zero_hack.data import FAMILY_FILE_NAMES, load_sequence_records
 from zero_hack.eval.anomaly_synth import build_rule_stratified_corruptions
 from zero_hack.eval.io import join_steps
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, FAMILIES, load_split_records
@@ -22,6 +21,14 @@ def _write(path: Path, header: list[str], rows: list[list]) -> None:
         writer = csv.writer(handle)
         writer.writerow(header)
         writer.writerows(rows)
+
+
+def _split_anomaly_record_pools(records: list, n_valid: int) -> tuple[list, list]:
+    valid_records = records[:n_valid]
+    invalid_records = records[n_valid:]
+    if not invalid_records:
+        invalid_records = records
+    return valid_records, invalid_records
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,26 +60,9 @@ def parse_args() -> argparse.Namespace:
         help="Invalid sequences/family for Task 3.",
     )
     parser.add_argument("--seed", type=int, default=1729)
-    parser.add_argument(
-        "--split",
-        default="test",
-        choices=("train", "valid", "test", "test_standard", "test_diverse"),
-    )
+    parser.add_argument("--split", default="test", choices=("train", "valid", "test"))
     parser.add_argument("--out-dir", default=str(PROJECT_ROOT / "data" / "eval" / "default"))
     return parser.parse_args()
-
-
-def _family_split_records(
-    splits_dir: Path,
-    family: str,
-    split: str,
-    limit_per_family: int | None,
-) -> list:
-    family_name = FAMILY_FILE_NAMES[family].removesuffix(".csv")
-    records = load_sequence_records(splits_dir / f"{family_name}_{split}.csv")
-    if limit_per_family is not None:
-        return records[:limit_per_family]
-    return records
 
 
 def main() -> None:
@@ -87,35 +77,13 @@ def main() -> None:
     )
     eval_families = tuple(args.eval_families or FAMILIES)
     if args.eval_families:
-        split = args.split
+        split = "family_tests"
         records = []
         for family in eval_families:
-            if args.split == "test":
-                records.extend(bundle.records[f"test_{family}"])
-            else:
-                records.extend(
-                    _family_split_records(
-                        Path(args.splits_dir),
-                        family,
-                        args.split,
-                        args.limit_per_family,
-                    )
-                )
+            records.extend(bundle.records[f"test_{family}"])
     else:
         split = args.split
-        if args.split in bundle.records:
-            records = bundle.records[split]
-        else:
-            records = load_sequence_records(Path(args.splits_dir) / f"{args.split}.csv")
-            if args.limit_per_family is not None:
-                by_family_limited = []
-                counts = {family: 0 for family in FAMILIES}
-                for record in records:
-                    if counts[record.family] >= args.limit_per_family:
-                        continue
-                    by_family_limited.append(record)
-                    counts[record.family] += 1
-                records = by_family_limited
+        records = bundle.records[split]
     by_family: dict[str, list] = {}
     for rec in records:
         by_family.setdefault(rec.family, []).append(rec)
@@ -128,6 +96,8 @@ def main() -> None:
     anomaly_rows: list[list] = []
     anomaly_truth: list[list] = []
     anomaly_rule_counts: dict[str, int] = {}
+    anomaly_invalid_counts_by_family: dict[str, int] = {}
+    anomaly_missing_invalid_by_family: dict[str, int] = {}
 
     for family, recs in sorted(by_family.items()):
         for rec in recs[: args.n_valid]:
@@ -141,18 +111,26 @@ def main() -> None:
                 completion_truth.append([example_id, join_steps(steps[cut:])])
 
     for family, recs in sorted(by_family.items()):
-        invalid_examples = build_rule_stratified_corruptions(
+        valid_source_records, invalid_source_records = _split_anomaly_record_pools(
             recs,
+            args.n_anomaly_valid,
+        )
+        invalid_examples = build_rule_stratified_corruptions(
+            invalid_source_records,
             n_invalid=args.n_anomaly_invalid,
             rng=rng,
         )
+        anomaly_invalid_counts_by_family[family] = len(invalid_examples)
+        missing_invalid = args.n_anomaly_invalid - len(invalid_examples)
+        if missing_invalid:
+            anomaly_missing_invalid_by_family[family] = missing_invalid
         for bad_idx, example in enumerate(invalid_examples):
             example_id = f"{family}_{example.sequence_id}_bad_{bad_idx:04d}_{example.rule}"
             anomaly_rows.append([example_id, family, join_steps(example.steps)])
             anomaly_truth.append([example_id, 0, example.rule])
             anomaly_rule_counts[example.rule] = anomaly_rule_counts.get(example.rule, 0) + 1
 
-        for rec in recs[: args.n_anomaly_valid]:
+        for rec in valid_source_records:
             steps = list(rec.steps)
             example_id = f"{family}_{rec.sequence_id}_ok"
             anomaly_rows.append([example_id, family, join_steps(steps)])
@@ -185,6 +163,8 @@ def main() -> None:
                 "completion_fractions": args.fractions,
                 "n_anomaly_valid_per_family": args.n_anomaly_valid,
                 "n_anomaly_invalid_per_family": args.n_anomaly_invalid,
+                "anomaly_invalid_counts_by_family": anomaly_invalid_counts_by_family,
+                "anomaly_missing_invalid_by_family": anomaly_missing_invalid_by_family,
                 "anomaly_rule_counts": anomaly_rule_counts,
                 "seed": args.seed,
             },
