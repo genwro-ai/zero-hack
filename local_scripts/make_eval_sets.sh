@@ -4,18 +4,15 @@ set -euo pipefail
 # Create eval datasets locally under data/eval.
 #
 # This mirrors slurm/make_eval_sets.sbatch:
-#   data/eval/<dataset>/holdout_mosfet/standard/id
-#   data/eval/<dataset>/holdout_mosfet/standard/ood
-#   data/eval/<dataset>/holdout_mosfet/diverse/id
-#   data/eval/<dataset>/holdout_mosfet/diverse/ood
+#   data/eval/<dataset>/holdout_mosfet/id
+#   data/eval/<dataset>/holdout_mosfet/ood
 #
 # Each holdout directory represents training on the other two families.
 # The id view evaluates those two families; the ood view evaluates the holdout.
 
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
-DATASETS="${DATASETS:-mixed_s005k_v40_a60 mixed_s010k_v40_a60 mixed_s020k_v40_a60 mixed_s100k_v40_a60 mixed_s500k_v40_a60 mixed_s1000k_v40_a60}"
-EVAL_SOURCES="${EVAL_SOURCES:-test_standard test_diverse}"
+DATASETS="${DATASETS:-valid_s005k valid_s010k valid_s020k valid_s100k valid_s500k valid_s1000k}"
 HOLDOUT_FAMILIES="${HOLDOUT_FAMILIES:-mosfet igbt ic}"
 N_VALID="${N_VALID:-100}"
 N_ANOMALY_VALID="${N_ANOMALY_VALID:-200}"
@@ -30,7 +27,6 @@ Usage: local_scripts/make_eval_sets.sh [options]
 
 Options:
   --datasets "..."          space-separated dataset labels
-  --eval-sources "..."      test/test_standard/test_diverse sources
   --holdout-families "..."  space-separated holdout families
   --generated-root PATH     generated-data root
   --eval-root PATH          eval-data output root
@@ -45,8 +41,7 @@ Options:
 Environment variables with the same names are also supported:
   GENERATED_ROOT=data/generated
   EVAL_ROOT=data/eval
-  DATASETS="mixed_s005k_v40_a60 mixed_s010k_v40_a60"
-  EVAL_SOURCES="test_standard test_diverse"
+  DATASETS="valid_s005k valid_s010k"
   HOLDOUT_FAMILIES="mosfet igbt ic"
   N_VALID=100
   N_ANOMALY_VALID=200
@@ -65,10 +60,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --holdout-families)
       HOLDOUT_FAMILIES="${2:?Missing value for --holdout-families}"
-      shift 2
-      ;;
-    --eval-sources)
-      EVAL_SOURCES="${2:?Missing value for --eval-sources}"
       shift 2
       ;;
     --generated-root)
@@ -119,7 +110,6 @@ args=(
   --generated-root "$GENERATED_ROOT"
   --out-root "$EVAL_ROOT"
   --datasets $DATASETS
-  --eval-sources $EVAL_SOURCES
   --holdout-families $HOLDOUT_FAMILIES
   --n-valid "$N_VALID"
   --n-anomaly-valid "$N_ANOMALY_VALID"

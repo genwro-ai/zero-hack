@@ -31,8 +31,7 @@ set -euo pipefail
 #   sbatch --array=1 slurm/train_decoders.sbatch
 #
 # Common overrides:
-#   DATASET=mixed_s100k_v40_a60
-#   EVAL_VIEWS="standard/id standard/ood diverse/id diverse/ood"
+#   DATASET=valid_s100k
 #   HOLDOUT_FAMILY=ic
 #   EPOCHS=30
 #   PATIENCE=5
@@ -61,7 +60,7 @@ MODELS=(transformer gpt)
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 MODEL="${MODELS[$TASK_ID]}"
 
-DATASET="${DATASET:-mixed_s100k_v40_a60}"
+DATASET="${DATASET:-valid_s005k}"
 HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
@@ -72,7 +71,6 @@ BATCH_SIZE="${BATCH_SIZE:-128}"
 LR="${LR:-3e-4}"
 MAX_CONTEXT="${MAX_CONTEXT:-192}"
 K="${K:-5}"
-EVAL_VIEWS="${EVAL_VIEWS:-standard/id standard/ood diverse/id diverse/ood}"
 RUNNER="${RUNNER:-srun}"
 
 mkdir -p outputs/slurm "$SLURM_OUTPUT_ROOT"/{models,preds,metrics}
@@ -92,7 +90,6 @@ ARGS=(
   --lr "$LR"
   --max-context "$MAX_CONTEXT"
   --k "$K"
-  --eval-views $EVAL_VIEWS
   --device cuda
 )
 

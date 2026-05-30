@@ -18,7 +18,7 @@ from zero_hack.models.classic_baselines import (
 from zero_hack.models.common import FAMILIES, load_split_records
 
 _DATASET_SIZE = re.compile(r"_s(\d+)k$")
-_VIEWS = ("id", "ood", "standard/id", "standard/ood", "diverse/id", "diverse/ood")
+_VIEWS = ("id", "ood")
 
 
 def _dataset_sort_key(name: str) -> tuple[int, str]:
@@ -165,13 +165,7 @@ def _parse_args() -> argparse.Namespace:
         choices=CLASSIC_BASELINES,
         default=["most_frequent", "ngram"],
     )
-    parser.add_argument(
-        "--views",
-        nargs="+",
-        choices=_VIEWS,
-        default=None,
-        help="Eval views. Defaults to standard/diverse views when present, else id/ood.",
-    )
+    parser.add_argument("--views", nargs="+", choices=_VIEWS, default=list(_VIEWS))
     parser.add_argument("--tasks", nargs="+", choices=TASKS, default=list(TASKS))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument(
@@ -255,7 +249,6 @@ def main() -> None:
             raise SystemExit(f"Missing splits directory: {splits_dir}")
 
         for holdout_family in args.holdout_families:
-            views = args.views or _default_views(eval_root, dataset, holdout_family)
             bundle = load_split_records(
                 splits_dir,
                 holdout_family=holdout_family,
@@ -292,7 +285,7 @@ def main() -> None:
                         f"P={tuning['val_precision']:.4f} R={tuning['val_recall']:.4f})"
                     )
 
-                for view in views:
+                for view in args.views:
                     eval_dir = eval_root / dataset / f"holdout_{holdout_family}" / view
                     if not eval_dir.exists():
                         raise SystemExit(
@@ -328,14 +321,6 @@ def main() -> None:
                         task: metrics.get("all", metrics) for task, metrics in results.items()
                     }
                     print(json.dumps(compact, indent=2))
-
-
-def _default_views(eval_root: Path, dataset: str, holdout_family: str) -> list[str]:
-    base = eval_root / dataset / f"holdout_{holdout_family}"
-    mixed_views = ["standard/id", "standard/ood", "diverse/id", "diverse/ood"]
-    if all((base / view).exists() for view in mixed_views):
-        return mixed_views
-    return ["id", "ood"]
 
 
 if __name__ == "__main__":

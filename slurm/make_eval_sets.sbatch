@@ -16,11 +16,9 @@ set -euo pipefail
 
 # Slurm array job for creating local eval sets under data/eval.
 #
-# For each mixed dataset size, this creates standard and diverse eval suites:
-#   data/eval/mixed_s005k_v40_a60/holdout_mosfet/standard/id
-#   data/eval/mixed_s005k_v40_a60/holdout_mosfet/standard/ood
-#   data/eval/mixed_s005k_v40_a60/holdout_mosfet/diverse/id
-#   data/eval/mixed_s005k_v40_a60/holdout_mosfet/diverse/ood
+# For each generated dataset size, this creates the three holdout combinations:
+#   data/eval/valid_s005k/holdout_mosfet/id
+#   data/eval/valid_s005k/holdout_mosfet/ood
 #
 # Each holdout directory uses the corresponding two families as train families
 # in metadata. The id view evaluates those two families; the ood view evaluates
@@ -32,8 +30,6 @@ set -euo pipefail
 # Optional environment overrides:
 #   GENERATED_ROOT=data/generated
 #   EVAL_ROOT=data/eval
-#   DATASETS="mixed_s005k_v40_a60 mixed_s010k_v40_a60 ..."
-#   EVAL_SOURCES="test_standard test_diverse"   # use EVAL_SOURCES=test for legacy layout
 #   HOLDOUT_FAMILIES="mosfet igbt ic"
 #   N_VALID=100
 #   N_ANOMALY_VALID=200
@@ -56,15 +52,19 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 source slurm/setup_uv.sh
 
-DEFAULT_DATASETS="mixed_s005k_v40_a60 mixed_s010k_v40_a60 mixed_s020k_v40_a60 mixed_s100k_v40_a60 mixed_s500k_v40_a60 mixed_s1000k_v40_a60"
-# shellcheck disable=SC2206
-DATASET_LIST=(${DATASETS:-$DEFAULT_DATASETS})
+DATASETS=(
+  valid_s005k
+  valid_s010k
+  valid_s020k
+  valid_s100k
+  valid_s500k
+  valid_s1000k
+)
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
-DATASET="${DATASET_LIST[$TASK_ID]}"
+DATASET="${DATASETS[$TASK_ID]}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
-EVAL_SOURCES="${EVAL_SOURCES:-test_standard test_diverse}"
 HOLDOUT_FAMILIES="${HOLDOUT_FAMILIES:-mosfet igbt ic}"
 N_VALID="${N_VALID:-100}"
 N_ANOMALY_VALID="${N_ANOMALY_VALID:-200}"
@@ -74,14 +74,13 @@ RUNNER="${RUNNER:-srun}"
 
 mkdir -p outputs/slurm "$EVAL_ROOT"
 
-printf "task_id=%s dataset=%s generated_root=%s eval_root=%s sources=%s holdouts=%s\n" \
-  "$TASK_ID" "$DATASET" "$GENERATED_ROOT" "$EVAL_ROOT" "$EVAL_SOURCES" "$HOLDOUT_FAMILIES"
+printf "task_id=%s dataset=%s generated_root=%s eval_root=%s holdouts=%s\n" \
+  "$TASK_ID" "$DATASET" "$GENERATED_ROOT" "$EVAL_ROOT" "$HOLDOUT_FAMILIES"
 
 time "$RUNNER" uv run python scripts/make_all_eval_sets.py \
   --generated-root "$GENERATED_ROOT" \
   --datasets "$DATASET" \
   --out-root "$EVAL_ROOT" \
-  --eval-sources $EVAL_SOURCES \
   --holdout-families $HOLDOUT_FAMILIES \
   --n-valid "$N_VALID" \
   --n-anomaly-valid "$N_ANOMALY_VALID" \

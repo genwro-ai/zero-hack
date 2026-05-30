@@ -111,32 +111,19 @@ three data stages:
 ```bash
 # Local
 local_scripts/generate_valid_datasets.sh
-local_scripts/generate_augmented_datasets.sh
-local_scripts/create_mixed_dataset_splits.sh --force
+local_scripts/create_all_dataset_splits.sh --force
 local_scripts/make_eval_sets.sh
 
 # Slurm
 sbatch slurm/generate_valid_datasets.sbatch
-sbatch slurm/generate_augmented_datasets.sbatch
-sbatch slurm/create_mixed_dataset_splits.sbatch
 sbatch slurm/create_dataset_splits.sbatch
 sbatch slurm/make_eval_sets.sbatch
 ```
 
-For richer training, use the mixed split pipeline. It builds
-`mixed_s<size>_v40_a60` datasets with 40% vanilla `generate_sequences.py`
-records and 60% augmented records in `train.csv`, `valid.csv`, and the
-compatibility `test.csv`. It also writes `test_standard.csv` from vanilla-only
-records and `test_diverse.csv` from augmented-only records. Eval generation for
-mixed datasets creates both
-`data/eval/<dataset>/holdout_<family>/standard/{id,ood}/` and
-`data/eval/<dataset>/holdout_<family>/diverse/{id,ood}/`.
-
 Until the organizers distribute the real eval files, `make_eval_set.py`
 synthesises local held-out eval sets under
-`data/eval/<dataset>/holdout_<family>/{id,ood}/` for legacy datasets, or under
-the `standard/` and `diverse/` suites for mixed datasets, using prefix cuts for
-Tasks 1 & 2 and validator-flagged perturbations for Task 3:
+`data/eval/<dataset>/holdout_<family>/{id,ood}/` using prefix cuts for Tasks 1
+& 2 and validator-flagged perturbations for Task 3:
 
 ```bash
 # Build all dataset-size x holdout-family eval sets
@@ -144,10 +131,10 @@ uv run python scripts/make_all_eval_sets.py
 
 # Train and evaluate classic baselines on the holdout setup
 uv run python scripts/run_holdout_experiments.py \
-  --datasets mixed_s005k_v40_a60 \
+  --datasets valid_s005k \
   --holdout-families ic \
   --models most_frequent ngram \
-  --views standard/id standard/ood diverse/id diverse/ood
+  --views id ood
 
 # Score a submission against ground truth (mirrors the organizer CLI)
 uv run python scripts/eval_metrics.py --task next_step \

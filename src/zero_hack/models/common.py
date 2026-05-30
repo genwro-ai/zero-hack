@@ -23,14 +23,10 @@ DEFAULT_SPLITS_DIR = PROJECT_ROOT / "data" / "generated" / "valid_s005k" / "spli
 DEFAULT_METRICS_DIR = PROJECT_ROOT / "outputs" / "metrics"
 FAMILIES = tuple(FAMILY_FILE_NAMES)
 TEST_SPLIT_PREFIX = "test_"
-OPTIONAL_TEST_SOURCES = ("test_standard", "test_diverse")
 
 
-def family_test_split(family: str, source: str = "test") -> str:
-    family = family.lower()
-    if source == "test":
-        return f"{TEST_SPLIT_PREFIX}{family}"
-    return f"{source}_{family}"
+def family_test_split(family: str) -> str:
+    return f"{TEST_SPLIT_PREFIX}{family.lower()}"
 
 
 @dataclass(frozen=True)
@@ -47,8 +43,8 @@ class DataBundle:
     def test_split_names(self) -> tuple[str, ...]:
         return tuple(
             split_name
-            for split_name in _ordered_report_splits(self.records)
-            if split_name != "test"
+            for family in FAMILIES
+            if (split_name := family_test_split(family)) in self.records
         )
 
 
@@ -82,24 +78,6 @@ def load_split_records(
             limit_per_family,
         )
 
-    for source in OPTIONAL_TEST_SOURCES:
-        if not _has_family_split(splits_dir, train_families, source):
-            continue
-        by_split[source] = _load_family_splits(
-            splits_dir,
-            train_families,
-            source,
-            limit_per_family,
-        )
-        for family in families:
-            if _has_family_split(splits_dir, (family,), source):
-                by_split[family_test_split(family, source)] = _load_family_splits(
-                    splits_dir,
-                    (family,),
-                    source,
-                    limit_per_family,
-                )
-
     vocabulary = build_vocabulary(by_split["train"])
     return DataBundle(
         vocabulary=vocabulary,
@@ -123,13 +101,6 @@ def _load_family_splits(
             family_records = family_records[:limit_per_family]
         records.extend(family_records)
     return records
-
-
-def _has_family_split(splits_dir: Path, families: tuple[str, ...], split: str) -> bool:
-    return all(
-        (splits_dir / f"{FAMILY_FILE_NAMES[family].removesuffix('.csv')}_{split}.csv").exists()
-        for family in families
-    )
 
 
 def make_dataset(
@@ -270,40 +241,14 @@ def evaluate_model(
 
 
 def report_splits(bundle: DataBundle) -> tuple[str, ...]:
-    """Splits to report on: combined test sources, then source-specific family tests."""
-    return tuple(
-        split for split in _ordered_report_splits(bundle.records) if split in bundle.records
-    )
+    """Splits to report on: the combined test split, then each per-family test split."""
+    return tuple(split for split in ("test", *bundle.test_split_names) if split in bundle.records)
 
 
 def split_role(split: str, bundle: DataBundle) -> str:
-    """Describe whether a reported split is ID/OOD and standard/diverse."""
-    source = "mixed"
-    family = ""
-    if split == "test_standard":
-        source = "standard"
-    elif split == "test_diverse":
-        source = "diverse"
-    elif split.startswith("test_standard_"):
-        source = "standard"
-        family = split.removeprefix("test_standard_")
-    elif split.startswith("test_diverse_"):
-        source = "diverse"
-        family = split.removeprefix("test_diverse_")
-    elif split.startswith(TEST_SPLIT_PREFIX):
-        family = split.removeprefix(TEST_SPLIT_PREFIX)
-
-    role = "combined"
-    if family:
-        role = "ood" if family == bundle.holdout_family else "id"
-    return role if source == "mixed" else f"{role}/{source}"
-
-
-def _ordered_report_splits(records: dict[str, list[SequenceRecord]]) -> tuple[str, ...]:
-    ordered = ["test", "test_standard", "test_diverse"]
-    for source in ("test", *OPTIONAL_TEST_SOURCES):
-        ordered.extend(family_test_split(family, source) for family in FAMILIES)
-    return tuple(dict.fromkeys(split for split in ordered if split in records))
+    """``ood`` for the held-out family's test split, ``id`` otherwise."""
+    family = split.removeprefix(TEST_SPLIT_PREFIX)
+    return "ood" if family == bundle.holdout_family else "id"
 
 
 def render_report(
