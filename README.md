@@ -73,9 +73,6 @@ Classic next-step baselines live under `src/zero_hack/models/`. They read the
 train/valid/test CSVs produced by `scripts/create_dataset_splits.py`, so every
 model is compared on the same split artifacts.
 
-- **Most frequent** (`models/most_frequent/`): position-frequency baseline
-  conditioned on `(family, position bucket)`, with fallback to family/global
-  frequencies. The sanity-check lower bound.
 - **N-gram** (`models/ngram/`): family-conditioned counting model (default
   5-gram) with stupid-backoff to shorter contexts. The main classic baseline.
 - **VOMM** (`models/vomm/`): variable-order Markov model using the longest
@@ -86,39 +83,12 @@ All expose `predict_topk` (next step), greedy autoregressive completion, and
 evaluate next-step accuracy directly:
 
 ```bash
-uv run python -m zero_hack.models.most_frequent.train
 uv run python -m zero_hack.models.ngram.train
 ```
 
 Use `--splits-dir data/generated/valid_s100k/splits` to select a dataset size,
 `--holdout-family ic` for the two-families-train / third-family-test setup, and
 `--limit-per-family N` for a fast smoke run.
-
-## GFlowNet
-
-The GFlowNet model under `src/zero_hack/models/gflownet/` is a GPU-trained
-prefix-conditioned sequence generator, separate from the classical baselines.
-It can start from an existing process trajectory and sample a valid continuation.
-Its reward is non-differentiable and combines the official 10-rule validator,
-terminal/length gates, family-specific process checks, phase-order milestones,
-style likelihood, and a small anti-memorization term.
-
-With `--holdout-family`, training uses the other two families and writes
-Task 1/2/3 predictions and metrics for the available ID/OOD eval views under
-`outputs/preds/<dataset>/holdout_<family>/<view>/gflownet/` and
-`outputs/metrics/<dataset>/holdout_<family>/<view>/gflownet/`.
-
-```bash
-uv run python -m zero_hack.models.gflownet.train \
-  --dataset valid_s010k \
-  --holdout-family ic \
-  --limit-per-family 5000 \
-  --epochs 200 \
-  --tasks next_step completion anomaly \
-  --device cuda
-
-sbatch slurm/train_gflownet.sbatch
-```
 
 ## Evaluation
 
@@ -161,7 +131,7 @@ uv run python scripts/make_all_eval_sets.py
 uv run python scripts/run_holdout_experiments.py \
   --datasets valid_s005k \
   --holdout-families ic \
-  --models most_frequent ngram vomm \
+  --models ngram vomm \
   --views id ood
 
 # Score a submission against ground truth (mirrors the organizer CLI)

@@ -181,7 +181,7 @@ def _parse_args() -> argparse.Namespace:
         "--models",
         nargs="+",
         choices=CLASSIC_BASELINES,
-        default=["most_frequent", "ngram"],
+        default=["ngram"],
     )
     parser.add_argument("--views", nargs="+", choices=_VIEWS, default=list(_VIEWS))
     parser.add_argument("--tasks", nargs="+", choices=TASKS, default=list(TASKS))
@@ -317,7 +317,6 @@ def main() -> None:
                     bundle.records["train"],
                     n=args.n,
                     alpha=args.alpha,
-                    bucket=args.bucket,
                     seed=args.seed,
                 )
 

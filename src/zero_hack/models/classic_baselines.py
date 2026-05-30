@@ -3,13 +3,12 @@ from typing import Any, Protocol
 
 from zero_hack.data import SequenceRecord
 from zero_hack.eval.validator import first_violated_rule, validate_sequence
-from zero_hack.models.most_frequent import MostFrequentModel
 from zero_hack.models.ngram import NGramModel
 from zero_hack.models.vomm import VOMMModel
 
 MAX_COMPLETION_STEPS = 400
 SEQUENCE_TERMINATOR = "SHIP LOT"
-CLASSIC_BASELINES = ("most_frequent", "ngram", "vomm")
+CLASSIC_BASELINES = ("ngram", "vomm")
 
 
 class ClassicBaselineModel(Protocol):
@@ -33,14 +32,11 @@ def build_classic_baseline(
     *,
     n: int = 5,
     alpha: float = 0.4,
-    bucket: int = 5,
     seed: int = 1729,
 ) -> ClassicBaselineModel:
     _ = seed
     if name == "ngram":
         return NGramModel(n=n, backoff_alpha=alpha).fit(train_records)
-    if name == "most_frequent":
-        return MostFrequentModel(position_bucket_size=bucket).fit(train_records)
     if name == "vomm":
         return VOMMModel(max_order=n).fit(train_records)
     allowed = ", ".join(CLASSIC_BASELINES)
