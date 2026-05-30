@@ -15,14 +15,12 @@
 
 set -euo pipefail
 
-# Slurm array job for training the next-step neural baselines.
+# Slurm array job for training the LSTM next-step baseline.
 #
 #   task 0 -> LSTM         (zero_hack.models.lstm.train)
 #
-# Each task trains on the chosen dataset's train/valid/test splits, logs
-# train/val loss per epoch, writes learning history, and writes the next-step
-# eval report under
-#   outputs/models/<dataset>/<model>/{history.json,results.json,results.md}
+# The model trains on generated train/valid splits and evaluates next-step on
+# fixed data/eval/<dataset>/holdout_<family>/{id,ood}.
 #
 # Submit:
 #   sbatch slurm/train_models.sbatch
@@ -31,6 +29,10 @@ set -euo pipefail
 #   DATASET=valid_s005k          # which generated dataset to train on
 #   OUTPUT_ROOT=data/generated   # where the dataset raw/ dirs live
 #   MODEL_ROOT=outputs/models    # where checkpoints are written
+#   EVAL_ROOT=data/eval
+#   PREDS_ROOT=outputs/preds
+#   METRICS_ROOT=outputs/metrics
+#   HOLDOUT_FAMILY=ic
 #   EPOCHS=10
 #   BATCH_SIZE=128
 #   LR=3e-3
@@ -63,22 +65,36 @@ MODEL="${MODELS[$TASK_ID]}"
 DATASET="${DATASET:-valid_s005k}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 MODEL_ROOT="${MODEL_ROOT:-outputs/models}"
+EVAL_ROOT="${EVAL_ROOT:-data/eval}"
+PREDS_ROOT="${PREDS_ROOT:-outputs/preds}"
+METRICS_ROOT="${METRICS_ROOT:-outputs/metrics}"
 EPOCHS="${EPOCHS:-10}"
 BATCH_SIZE="${BATCH_SIZE:-128}"
 LR="${LR:-3e-3}"
 MAX_CONTEXT="${MAX_CONTEXT:-192}"
 K="${K:-3}"
 RUNNER="${RUNNER:-srun}"
+HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 
 SPLITS_DIR="${OUTPUT_ROOT}/${DATASET}/splits"
-REPORT_DIR="${MODEL_ROOT}/${DATASET}"
-OUT_DIR="${REPORT_DIR}/${MODEL}"
+METHOD_NAME="$MODEL"
+MODEL_RUN_NAME="${METHOD_NAME}_holdout_${HOLDOUT_FAMILY}"
+REPORT_DIR="${METRICS_ROOT}/${DATASET}/${MODEL_RUN_NAME}"
+CKPT="${MODEL_ROOT}/${DATASET}/${MODEL_RUN_NAME}/best.pt"
+OUT_DIR="$(dirname "$CKPT")"
 
 mkdir -p outputs/slurm "$OUT_DIR"
 
 ARGS=(
   --splits-dir "$SPLITS_DIR"
+  --dataset "$DATASET"
+  --eval-root "$EVAL_ROOT"
+  --preds-root "$PREDS_ROOT"
+  --metrics-root "$METRICS_ROOT"
+  --holdout-family "$HOLDOUT_FAMILY"
+  --method-name "$METHOD_NAME"
   --report-dir "$REPORT_DIR"
+  --checkpoint-path "$CKPT"
   --epochs "$EPOCHS"
   --batch-size "$BATCH_SIZE"
   --lr "$LR"
@@ -95,8 +111,8 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
   ARGS+=($EXTRA_ARGS)
 fi
 
-printf "task_id=%s model=%s dataset=%s splits=%s out=%s epochs=%s\n" \
-  "$TASK_ID" "$MODEL" "$DATASET" "$SPLITS_DIR" "$OUT_DIR" "$EPOCHS"
+printf "task_id=%s model=%s dataset=%s holdout=%s splits=%s out=%s epochs=%s\n" \
+  "$TASK_ID" "$MODEL" "$DATASET" "$HOLDOUT_FAMILY" "$SPLITS_DIR" "$OUT_DIR" "$EPOCHS"
 
 time "$RUNNER" uv run python -m "zero_hack.models.${MODEL}.train" "${ARGS[@]}"
 
