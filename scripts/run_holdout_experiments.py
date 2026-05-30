@@ -21,6 +21,7 @@ from zero_hack.models.classic_baselines import (
 from zero_hack.models.common import FAMILIES, load_split_records, pick_device
 from zero_hack.models.gpt.model import GPTConfig, GPTNextStepModel
 from zero_hack.models.gpt.train import CausalLMAdapter, fit_causal_lm
+from zero_hack.models.neurosymbolic import SymbolicMaskAdapter
 from zero_hack.models.phase_loss import NextPhaseLoss
 
 _DATASET_SIZE = re.compile(r"_s(\d+)k$")
@@ -219,6 +220,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--gpt-max-context", type=int, default=256)
     parser.add_argument("--gpt-valid-limit", type=int, default=2000)
     parser.add_argument("--phase-loss-weight", type=float, default=0.0)
+    parser.add_argument("--neurosymbolic", action="store_true")
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--train-sizes", nargs="+", type=int, default=None)
     parser.add_argument("--save-checkpoints", action="store_true")
@@ -454,6 +456,9 @@ def main() -> None:
                             hmm_smoothing=args.hmm_smoothing,
                             seed=args.seed,
                         )
+
+                    if args.neurosymbolic:
+                        model = SymbolicMaskAdapter(model, bundle.vocabulary)
 
                     threshold, tuning = _resolve_anomaly_threshold(
                         model,

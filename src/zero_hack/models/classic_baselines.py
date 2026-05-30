@@ -102,14 +102,21 @@ def predict_anomaly(
             "predicted_rule": None if valid else first_violated_rule(sequence),
         }
 
-    if method != "likelihood":
-        raise ValueError("anomaly method must be one of: validator, likelihood")
+    if method not in ("likelihood", "hybrid"):
+        raise ValueError("anomaly method must be one of: validator, likelihood, hybrid")
 
     avg_logprob = sequence_avg_logprob(model, family, sequence)
-    score = 1.0 / (1.0 + math.exp(-(avg_logprob - threshold)))
+    likelihood = 1.0 / (1.0 + math.exp(-(avg_logprob - threshold)))
+
+    if method == "likelihood":
+        valid = avg_logprob >= threshold
+        rule = None if valid else (first_violated_rule(sequence) or "RULE_DEP_NO_CLEAN")
+        return {"is_valid": int(valid), "score": round(likelihood, 6), "predicted_rule": rule}
+
+    rule = first_violated_rule(sequence)
+    if rule is not None:
+        return {"is_valid": 0, "score": round(0.5 * likelihood, 6), "predicted_rule": rule}
     valid = avg_logprob >= threshold
-    return {
-        "is_valid": int(valid),
-        "score": round(score, 6),
-        "predicted_rule": None if valid else (first_violated_rule(sequence) or "RULE_DEP_NO_CLEAN"),
-    }
+    score = 0.5 + 0.5 * likelihood
+    fallback = None if valid else "RULE_DEP_NO_CLEAN"
+    return {"is_valid": int(valid), "score": round(score, 6), "predicted_rule": fallback}

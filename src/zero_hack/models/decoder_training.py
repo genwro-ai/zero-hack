@@ -23,9 +23,10 @@ from zero_hack.models.common import (
     pick_device,
 )
 from zero_hack.models.gpt import GPTConfig, GPTNextStepModel
+from zero_hack.models.nanogpt import NanoGPTConfig, NanoGPTModel
 from zero_hack.models.transformer.model import TransformerConfig, TransformerModel
 
-ARCHITECTURES = ("transformer", "gpt")
+ARCHITECTURES = ("transformer", "gpt", "nanogpt")
 
 
 def _collate_right_padded(batch: list[dict[str, Any]], pad_id: int) -> dict[str, Any]:
@@ -88,6 +89,17 @@ def _build_model(
             max_context=args.max_context,
         )
         return GPTNextStepModel(vocab_size, config, pad_id=bundle.vocabulary.pad_id), config
+
+    if architecture == "nanogpt":
+        config = NanoGPTConfig(
+            d_model=args.d_model,
+            nhead=args.nhead,
+            num_layers=args.num_layers or 3,
+            dim_feedforward=args.dim_feedforward or 512,
+            dropout=args.dropout,
+            max_context=args.max_context,
+        )
+        return NanoGPTModel(vocab_size, config, pad_id=bundle.vocabulary.pad_id), config
 
     if architecture == "transformer":
         config = TransformerConfig(

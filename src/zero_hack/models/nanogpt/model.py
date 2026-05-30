@@ -6,7 +6,7 @@ from torch import nn
 
 
 @dataclass
-class GPTConfig:
+class NanoGPTConfig:
     d_model: int = 128
     nhead: int = 4
     num_layers: int = 3
@@ -19,13 +19,8 @@ class GPTConfig:
         return asdict(self)
 
 
-def _alibi_slopes(nhead, device):
-    start = 2.0 ** (-8.0 / nhead)
-    return torch.tensor([start ** (i + 1) for i in range(nhead)], device=device)
-
-
-class AlibiAttention(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+class CausalSelfAttention(nn.Module):
+    def __init__(self, config: NanoGPTConfig) -> None:
         super().__init__()
         self.nhead = config.nhead
         self.head_dim = config.d_model // config.nhead
@@ -44,12 +39,12 @@ class AlibiAttention(nn.Module):
         return self.proj(attended)
 
 
-class GPTBlock(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+class Block(nn.Module):
+    def __init__(self, config: NanoGPTConfig) -> None:
         super().__init__()
-        self.ln_attn = nn.LayerNorm(config.d_model)
-        self.attn = AlibiAttention(config)
-        self.ln_mlp = nn.LayerNorm(config.d_model)
+        self.ln1 = nn.LayerNorm(config.d_model)
+        self.attn = CausalSelfAttention(config)
+        self.ln2 = nn.LayerNorm(config.d_model)
         self.mlp = nn.Sequential(
             nn.Linear(config.d_model, config.dim_feedforward),
             nn.GELU(),
@@ -59,27 +54,26 @@ class GPTBlock(nn.Module):
         )
 
     def forward(self, hidden, attn_mask):
-        hidden = hidden + self.attn(self.ln_attn(hidden), attn_mask)
-        hidden = hidden + self.mlp(self.ln_mlp(hidden))
+        hidden = hidden + self.attn(self.ln1(hidden), attn_mask)
+        hidden = hidden + self.mlp(self.ln2(hidden))
         return hidden
 
 
-class GPTNextStepModel(nn.Module):
-    """Decoder-only model with ALiBi attention for process-step next-token prediction."""
-
-    def __init__(self, vocab_size: int, config: GPTConfig, pad_id: int = 0) -> None:
+class NanoGPTModel(nn.Module):
+    def __init__(self, vocab_size: int, config: NanoGPTConfig, pad_id: int = 0) -> None:
         super().__init__()
         self.config = config
         self.pad_id = pad_id
 
-        self.token_embedding = nn.Embedding(vocab_size, config.d_model, padding_idx=pad_id)
-        self.dropout = nn.Dropout(config.dropout)
-        self.blocks = nn.ModuleList(GPTBlock(config) for _ in range(config.num_layers))
+        self.wte = nn.Embedding(vocab_size, config.d_model, padding_idx=pad_id)
+        self.wpe = nn.Embedding(config.max_context, config.d_model)
+        self.drop = nn.Dropout(config.dropout)
+        self.blocks = nn.ModuleList(Block(config) for _ in range(config.num_layers))
         self.ln_f = nn.LayerNorm(config.d_model)
         self.head = nn.Linear(config.d_model, vocab_size, bias=False)
         self.apply(self._init_weights)
         if config.tie_embeddings:
-            self.head.weight = self.token_embedding.weight
+            self.head.weight = self.wte.weight
 
     @staticmethod
     def _init_weights(module):
@@ -90,9 +84,7 @@ class GPTNextStepModel(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, std=0.02)
 
-    def _hidden(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _hidden(self, input_ids, attention_mask):
         seq_len = input_ids.size(1)
         if seq_len > self.config.max_context:
             input_ids = input_ids[:, -self.config.max_context :]
@@ -100,28 +92,20 @@ class GPTNextStepModel(nn.Module):
             seq_len = input_ids.size(1)
 
         device = input_ids.device
-        hidden = self.dropout(self.token_embedding(input_ids))
-
-        causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool, device=device))
-        keep = causal[None, None] & attention_mask[:, None, None, :]
         positions = torch.arange(seq_len, device=device)
-        dist = (positions[:, None] - positions[None, :]).float()
-        bias = (-_alibi_slopes(self.config.nhead, device)[:, None, None] * dist).unsqueeze(0)
-        blocked = torch.zeros_like(keep, dtype=torch.float).masked_fill(~keep, -torch.inf)
-        attn_mask = bias + blocked
-
+        hidden = self.drop(self.wte(input_ids) + self.wpe(positions))
+        causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool, device=device))
+        attn_mask = causal[None, None] & attention_mask[:, None, None, :]
         for block in self.blocks:
             hidden = block(hidden, attn_mask)
         return self.ln_f(hidden), attention_mask
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids, attention_mask):
         hidden, attention_mask = self._hidden(input_ids, attention_mask)
         last_valid = attention_mask.long().sum(dim=1).clamp_min(1) - 1
         batch_idx = torch.arange(hidden.size(0), device=hidden.device)
         return self.head(hidden[batch_idx, last_valid, :])
 
-    def sequence_logits(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> torch.Tensor:
+    def sequence_logits(self, input_ids, attention_mask):
         hidden, _ = self._hidden(input_ids, attention_mask)
         return self.head(hidden)

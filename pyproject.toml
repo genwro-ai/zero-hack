@@ -11,6 +11,7 @@ dependencies = [
     "numpy>=2.4.6",
     "torch>=2.5.1",
     "matplotlib>=3.8",
+    "transformers>=4.44",
 ]
 
 # Use the CUDA (cu121) wheels only on Linux (the GPU cluster). On macOS the
