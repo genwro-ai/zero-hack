@@ -55,7 +55,7 @@ time: 0:30:00 by default, override with `--time` when needed
 This submits an array for:
 
 ```text
-5k, 10k, 20k, 100k, 500k, 1000k
+5k, 10k, 20k, 100k
 mosfet, igbt, ic
 ```
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-decoders
-#SBATCH --array=0-1
+#SBATCH --array=0-0
 #SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
@@ -15,20 +15,17 @@
 
 set -euo pipefail
 
-# Slurm array job for the decoder-only neural models.
+# Slurm job for the GPT decoder neural model.
 #
-#   task 0 -> transformer  (masked causal TransformerEncoder baseline)
-#   task 1 -> gpt          (explicit GPT-style decoder blocks)
+#   task 0 -> gpt          (explicit GPT-style decoder blocks)
 #
-# Outputs are kept separate from local runs by default:
-#   outputs/slurm_runs/models/<dataset>/<model>_holdout_<family>/best.pt
-#   outputs/slurm_runs/preds/<dataset>/holdout_<family>/{id,ood}/<model>/nextstep.csv
-#   outputs/slurm_runs/metrics/<dataset>/...
+# Outputs:
+#   outputs/models/<dataset>/<model>_holdout_<family>/best.pt
+#   outputs/preds/<dataset>/holdout_<family>/{id,ood}/<model>/nextstep.csv
+#   outputs/metrics/<dataset>/...
 #
-# Submit both:
+# Submit:
 #   sbatch slurm/train_decoders.sbatch
-# Submit one:
-#   sbatch --array=1 slurm/train_decoders.sbatch
 #
 # Common overrides:
 #   DATASET=valid_s100k
@@ -39,7 +36,7 @@ set -euo pipefail
 #   LR=3e-4
 #   MAX_CONTEXT=192
 #   LIMIT_PER_FAMILY=       # optional smoke cap
-#   SLURM_OUTPUT_ROOT=outputs/slurm_runs
+#   SLURM_OUTPUT_ROOT=outputs
 #   EXTRA_ARGS="--d-model 256 --num-layers 4"
 
 if [[ -n "${SCRATCH:-}" ]]; then
@@ -55,7 +52,7 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 source slurm/setup_uv.sh
 
-MODELS=(transformer gpt)
+MODELS=(gpt)
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 MODEL="${MODELS[$TASK_ID]}"
@@ -64,7 +61,7 @@ DATASET="${DATASET:-valid_s005k}"
 HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
-SLURM_OUTPUT_ROOT="${SLURM_OUTPUT_ROOT:-outputs/slurm_runs}"
+SLURM_OUTPUT_ROOT="${SLURM_OUTPUT_ROOT:-outputs}"
 EPOCHS="${EPOCHS:-30}"
 PATIENCE="${PATIENCE:-5}"
 BATCH_SIZE="${BATCH_SIZE:-128}"

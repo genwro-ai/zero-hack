@@ -4,7 +4,13 @@ from zero_hack.models.anomaly_threshold import (
     anomaly_f1,
     candidate_thresholds,
     sweep_threshold,
+    tune_anomaly_threshold_from_eval_dir,
 )
+
+
+class _LengthScorer:
+    def score_sequence(self, _family, steps):
+        return -float(len(steps) ** 2)
 
 
 def test_anomaly_f1_perfect_separation():
@@ -80,3 +86,19 @@ def test_sweep_empty_scores_raises():
 def test_mismatched_lengths_raise():
     with pytest.raises(ValueError):
         anomaly_f1([-1.0, -2.0], [1], threshold=-1.5)
+
+
+def test_tune_from_eval_dir_uses_fixed_anomaly_rows(tmp_path):
+    (tmp_path / "eval_input_anomaly.csv").write_text(
+        "EXAMPLE_ID,FAMILY,SEQUENCE\nvalid,ic,A|B\ninvalid,ic,A|B|C|D\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "anomaly_truth.csv").write_text(
+        "EXAMPLE_ID,IS_VALID,RULE\nvalid,1,\ninvalid,0,RULE_DEP_NO_CLEAN\n",
+        encoding="utf-8",
+    )
+
+    result = tune_anomaly_threshold_from_eval_dir(_LengthScorer(), tmp_path)
+
+    assert result.f1 == pytest.approx(1.0)
+    assert result.threshold == pytest.approx(-3.0)

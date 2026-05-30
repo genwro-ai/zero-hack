@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Eval input CSV, used for per-family breakdown.",
     )
+    parser.add_argument(
+        "--valid-supplement",
+        default=None,
+        help="[anomaly only] Valid examples to add when using organizer forbidden-only truth.",
+    )
     parser.add_argument("--json", default=None, help="Optional path to also write metrics as JSON.")
     return parser.parse_args()
 
@@ -50,6 +55,7 @@ def main() -> None:
         ground_truth=args.ground_truth,
         predictions=args.predictions,
         eval_input=args.eval_input,
+        valid_supplement=args.valid_supplement,
     )
     text = json.dumps(metrics, indent=2)
     print(f"== {args.task} ==")

@@ -1,8 +1,10 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from zero_hack.data import SequenceRecord
-from zero_hack.eval.anomaly_synth import build_validation_anomaly_set
+from zero_hack.eval import io
+from zero_hack.eval.anomaly_synth import ValExample, build_validation_anomaly_set
 from zero_hack.models.classic_baselines import ClassicBaselineModel, sequence_avg_logprob
 
 _GUARD_MARGIN = 1.0
@@ -78,3 +80,55 @@ def tune_anomaly_threshold(
     scores = [sequence_avg_logprob(model, ex.family, ex.steps) for ex in examples]
     labels = [ex.label for ex in examples]
     return sweep_threshold(scores, labels, grid=grid)
+
+
+def load_threshold_examples(eval_dir: str | Path) -> list[ValExample]:
+    """Load fixed anomaly-threshold examples from an eval-set directory.
+
+    ``ValExample.label`` follows the threshold-tuning convention:
+    ``1`` means anomaly/invalid and ``0`` means valid.
+    """
+
+    eval_dir = Path(eval_dir)
+    inputs = io.read_eval_input_anomaly(eval_dir / "eval_input_anomaly.csv")
+    truth = io.read_anomaly_truth(eval_dir / "anomaly_truth.csv")
+    examples: list[ValExample] = []
+    for row in inputs:
+        example_id = row["example_id"]
+        if example_id not in truth:
+            raise ValueError(f"{eval_dir}: missing anomaly truth for {example_id!r}")
+        is_valid = int(truth[example_id]["is_valid"])
+        examples.append(
+            ValExample(
+                family=row["family"],
+                steps=list(row["sequence"]),
+                label=0 if is_valid else 1,
+            )
+        )
+    return examples
+
+
+def tune_anomaly_threshold_from_examples(
+    model: ClassicBaselineModel,
+    examples: Sequence[ValExample],
+    *,
+    grid: Sequence[float] | None = None,
+) -> ThresholdResult:
+    if not examples:
+        raise ValueError("validation anomaly set is empty; cannot tune threshold")
+    scores = [sequence_avg_logprob(model, ex.family, ex.steps) for ex in examples]
+    labels = [ex.label for ex in examples]
+    return sweep_threshold(scores, labels, grid=grid)
+
+
+def tune_anomaly_threshold_from_eval_dir(
+    model: ClassicBaselineModel,
+    eval_dir: str | Path,
+    *,
+    grid: Sequence[float] | None = None,
+) -> ThresholdResult:
+    return tune_anomaly_threshold_from_examples(
+        model,
+        load_threshold_examples(eval_dir),
+        grid=grid,
+    )

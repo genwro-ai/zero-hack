@@ -20,9 +20,6 @@ _SAFE_CLEANS = [
     "WET CLEAN RCA1",
 ]
 
-# Front-cycle kinds. (No inter-level-dielectric cycle: it would emit
-# DEPOSIT INTERLAYER DIELECTRIC, which the phase labeler pulls into ILD_BLOCK,
-# breaking phase monotonicity — and it adds no token the ILD block doesn't.)
 _CYCLE_KIND_REP = {
     "oxide": "OXIDE ETCH",
     "poly": "DEPOSIT POLYSILICON",
@@ -40,7 +37,6 @@ class _Ctx:
         self.steps: list[str] = []
         self._level = 0
 
-    # --- emission --------------------------------------------------------
     def _raw(self, token: str) -> None:
         self.steps.append(token)
         self.counts[token] += 1
@@ -54,7 +50,6 @@ class _Ctx:
     def _has_clean(self, window: int) -> bool:
         return any(s in CLEAN_STEPS for s in self.steps[-window:])
 
-    # --- selection (coverage-driven) -------------------------------------
     def pick(self, choices: list[str]) -> str:
         """Return the least-used choice (ties broken randomly)."""
         best = min(self.counts[c] for c in choices)
@@ -82,7 +77,6 @@ class _Ctx:
         pool = [key for key, token in rep.items() if self.counts[token] == best]
         return self.rng.choice(pool)
 
-    # --- litho levels ----------------------------------------------------
     def next_level(self) -> int:
         if self._level < vocab.MAX_LITHO_LEVEL:
             self._level += 1
@@ -411,8 +405,6 @@ def generate_one(rng: random.Random, counts: Counter | None = None) -> list[str]
 
 
 def sample_family_label(rng: random.Random, synthetic_n: int = 12, unk_prob: float = 0.25) -> str:
-    """Sample a content-decoupled family label: a known family, a synthetic one,
-    or UNK. UNK dropout is what keeps a model from relying on the family token."""
     if rng.random() < unk_prob:
         return "UNK"
     if rng.random() < 0.5:
@@ -427,7 +419,6 @@ def generate_dataset(
     synthetic_n: int = 12,
     unk_prob: float = 0.25,
 ) -> list[SynthSequence]:
-    """Generate ``count`` labelled, validated sequences with shared coverage."""
     rng = random.Random(seed)
     counts: Counter = Counter()
     out: list[SynthSequence] = []
@@ -442,7 +433,6 @@ def generate_dataset(
 
 
 def write_dataset_csv(path: str | Path, dataset: list[SynthSequence]) -> None:
-    """Write a dataset as long-form ``FAMILY,SEQUENCE_ID,STEP`` rows."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="", encoding="utf-8") as handle:

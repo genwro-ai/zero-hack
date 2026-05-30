@@ -18,17 +18,14 @@ def _generator_module() -> ModuleType:
 
 
 def validate_sequence(steps: list[str]) -> list:
-    """Return the list of :class:`Violation` objects for ``steps`` (empty = valid)."""
     return _generator_module().validate_sequence(list(steps))
 
 
 def is_valid(steps: list[str]) -> bool:
-    """True when the sequence triggers none of the 10 process-logic rules."""
     return not validate_sequence(steps)
 
 
 def first_violated_rule(steps: list[str]) -> str | None:
-    """Rule id of the earliest violation (by step index), or ``None`` if valid."""
     violations = validate_sequence(steps)
     if not violations:
         return None

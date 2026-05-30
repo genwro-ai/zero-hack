@@ -53,7 +53,7 @@ RSYNC_ARGS=(
   --exclude "outputs/metrics/"
   --exclude "outputs/preds/"
   --exclude "outputs/slurm/"
-  --exclude "outputs/slurm_runs/"
+  --exclude "outputs/"
 )
 
 if [[ "$DELETE" == "1" ]]; then

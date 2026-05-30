@@ -1,12 +1,14 @@
 import argparse
+import json
+from pathlib import Path
 
+from zero_hack import PROJECT_ROOT
 from zero_hack.models.common import (
     DEFAULT_METRICS_DIR,
     DEFAULT_SPLITS_DIR,
     DataBundle,
     TrainConfig,
     count_parameters,
-    evaluate_and_report,
     load_split_records,
     make_loaders,
     pick_device,
@@ -14,6 +16,7 @@ from zero_hack.models.common import (
 )
 from zero_hack.models.lstm.inference import save_lstm_checkpoint
 from zero_hack.models.lstm.model import LSTMConfig, LSTMModel
+from zero_hack.models.neural_eval import write_neural_next_step_eval
 from zero_hack.models.scheduled_sampling import (
     make_sequence_loader,
     train_model_scheduled_sampling,
@@ -43,6 +46,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--report-dir", default=str(DEFAULT_METRICS_DIR))
+    parser.add_argument("--dataset", default=None)
+    parser.add_argument("--eval-root", default=str(PROJECT_ROOT / "data" / "eval"))
+    parser.add_argument("--preds-root", default=str(PROJECT_ROOT / "outputs" / "preds"))
+    parser.add_argument("--metrics-root", default=str(DEFAULT_METRICS_DIR))
+    parser.add_argument("--method-name", default=None)
+    parser.add_argument("--eval-views", nargs="+", default=["id", "ood"])
     parser.add_argument(
         "--family-dropout",
         type=float,
@@ -99,6 +108,11 @@ def main() -> None:
     print(f"parameters: {count_parameters(model)}")
 
     device = pick_device(args.device)
+    dataset = args.dataset or Path(args.splits_dir).parent.name
+    method_name = args.method_name or (
+        "lstm_scheduled_sampling" if args.scheduled_sampling else "lstm_teacher_forcing"
+    )
+    history_path = Path(args.report_dir) / "history.json"
     train_config = TrainConfig(
         epochs=args.epochs,
         lr=args.lr,
@@ -126,6 +140,7 @@ def main() -> None:
             device=device,
             eval_loader=loaders.get("valid"),
             max_context=args.max_context,
+            history_path=history_path,
         )
     else:
         model = train_model(
@@ -134,6 +149,7 @@ def main() -> None:
             config=train_config,
             device=device,
             pad_id=bundle.vocabulary.pad_id,
+            history_path=history_path,
         )
 
     if args.checkpoint_path:
@@ -155,15 +171,29 @@ def main() -> None:
         )
         print(f"wrote checkpoint {saved}")
 
-    evaluate_and_report(
+    if args.holdout_family is None:
+        print("skip fixed eval: pass --holdout-family to select data/eval holdout views")
+        return
+
+    results = write_neural_next_step_eval(
         model,
-        loaders,
-        bundle,
-        model_name="lstm",
+        bundle.vocabulary,
+        method_name=method_name,
+        dataset=dataset,
+        holdout_family=args.holdout_family,
+        eval_root=args.eval_root,
+        preds_root=args.preds_root,
+        metrics_root=args.metrics_root,
         device=device,
         k=args.k,
-        max_eval_batches=args.max_eval_batches,
-        report_dir=args.report_dir,
+        max_context=args.max_context,
+        views=tuple(args.eval_views),
+    )
+    out_dir = Path(args.metrics_root) / dataset / f"holdout_{args.holdout_family}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{method_name}_next_step_summary.json").write_text(
+        json.dumps(results, indent=2) + "\n",
+        encoding="utf-8",
     )
 
 

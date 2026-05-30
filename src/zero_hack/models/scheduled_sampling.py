@@ -18,8 +18,10 @@ loader produces), so this module ships its own ``SequenceDataset`` / loader.
 
 from __future__ import annotations
 
+import json
 import random
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -217,6 +219,7 @@ def train_model_scheduled_sampling(
     device: torch.device,
     eval_loader: DataLoader | None = None,
     max_context: int = 192,
+    history_path: str | Path | None = None,
 ) -> nn.Module:
     """Train ``model`` with scheduled sampling over full sequences.
 
@@ -229,6 +232,7 @@ def train_model_scheduled_sampling(
     )
     criterion = nn.CrossEntropyLoss(reduction="sum")
     bos_id = vocabulary.bos_id
+    history: list[dict[str, Any]] = []
 
     for epoch in range(config.epochs):
         ss_prob = scheduled_sampling_prob(
@@ -255,6 +259,11 @@ def train_model_scheduled_sampling(
                 print(f"epoch {epoch + 1} step {step + 1} ss_p {ss_prob:.3f} loss {avg:.4f}")
 
         avg = running / max(tokens_seen, 1)
+        row: dict[str, Any] = {
+            "epoch": epoch + 1,
+            "scheduled_sampling_prob": round(ss_prob, 6),
+            "train_loss": round(avg, 6),
+        }
         print(f"epoch {epoch + 1} done | ss_p {ss_prob:.3f} | train loss {avg:.4f}")
         if eval_loader is not None:
             summary = evaluate_model(
@@ -264,7 +273,14 @@ def train_model_scheduled_sampling(
                 k=config.k,
                 max_batches=config.max_eval_batches,
             )
+            row["valid_topk"] = summary["all"]
             print(f"epoch {epoch + 1} valid {summary['all']}")
+        history.append(row)
+    if history_path is not None:
+        path = Path(history_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(history, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {path}")
     return model
 
 

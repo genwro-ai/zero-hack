@@ -30,7 +30,7 @@ The shared defaults are:
 - generated raw data and splits: `data/generated/<dataset>/...`
 - eval datasets: `data/eval/<dataset>/holdout_<family>/{id,ood}/...`
 - dataset sizes: `valid_s005k`, `valid_s010k`, `valid_s020k`,
-  `valid_s100k`, `valid_s500k`, `valid_s1000k`
+  `valid_s100k`
 - holdout families: `mosfet`, `igbt`, `ic`
 - default eval sizing matches the hackathon protocol per three families:
   600 Task 1/2 rows from 100 sequences/family x 2 cuts, and 987 Task 3

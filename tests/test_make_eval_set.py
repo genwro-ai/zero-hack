@@ -17,6 +17,10 @@ def _record(sequence_id: str) -> SequenceRecord:
     return SequenceRecord(family="ic", sequence_id=sequence_id, steps=("RECEIVE WAFER LOT",))
 
 
+def _family_record(family: str, sequence_id: str) -> SequenceRecord:
+    return SequenceRecord(family=family, sequence_id=sequence_id, steps=("RECEIVE WAFER LOT",))
+
+
 def test_anomaly_record_pools_are_disjoint_when_possible():
     records = [_record(f"seq_{idx}") for idx in range(5)]
 
@@ -42,3 +46,19 @@ def test_anomaly_record_pools_wrap_only_when_no_invalid_pool_exists():
 
     assert valid_records == records
     assert invalid_records == records
+
+
+def test_eval_family_selection_honors_non_test_split():
+    class Bundle:
+        records = {
+            "valid": [
+                _family_record("mosfet", "m_valid"),
+                _family_record("ic", "ic_valid"),
+            ],
+            "test_ic": [_family_record("ic", "ic_test")],
+        }
+
+    split, records = _MAKE_EVAL_SET._select_records(Bundle, ("ic",), "valid")
+
+    assert split == "valid"
+    assert [record.sequence_id for record in records] == ["ic_valid"]

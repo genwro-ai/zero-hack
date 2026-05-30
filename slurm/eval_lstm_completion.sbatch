@@ -18,8 +18,8 @@
 
 set -euo pipefail
 
-# Free-running sequence-completion (Task 2) eval for the LSTM checkpoints
-# produced by slurm/train_lstm.sbatch. Mirrors its two run names:
+# Free-running Task 2 completion eval on fixed data/eval holdout views for
+# the LSTM checkpoints produced by slurm/train_lstm.sbatch.
 #
 #   task 0 -> lstm_teacher_forcing
 #   task 1 -> lstm_scheduled_sampling
@@ -31,11 +31,12 @@ set -euo pipefail
 #
 # Optional environment overrides:
 #   DATASET=valid_s005k
-#   SPLITS_ROOT=data/generated
+#   HOLDOUT_FAMILY=ic
+#   EVAL_ROOT=data/eval
 #   MODEL_ROOT=outputs/models
+#   PREDS_ROOT=outputs/preds
 #   METRICS_ROOT=outputs/metrics
-#   FRACTIONS="0.6 0.8"          # prefix fractions to keep
-#   MAX_EXAMPLES=100             # sequences per family per fraction (0 = all)
+#   VIEWS="id ood"
 #   MAX_STEPS=400                # generation length cap
 #   EXTRA_ARGS="--device cuda"   # appended verbatim to the eval CLI
 
@@ -57,18 +58,19 @@ TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 RUN="${RUNS[$TASK_ID]}"
 
 DATASET="${DATASET:-valid_s005k}"
-SPLITS_ROOT="${SPLITS_ROOT:-data/generated}"
+HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
+EVAL_ROOT="${EVAL_ROOT:-data/eval}"
 MODEL_ROOT="${MODEL_ROOT:-outputs/models}"
+PREDS_ROOT="${PREDS_ROOT:-outputs/preds}"
 METRICS_ROOT="${METRICS_ROOT:-outputs/metrics}"
-FRACTIONS="${FRACTIONS:-0.6 0.8}"
-MAX_EXAMPLES="${MAX_EXAMPLES:-100}"
+VIEWS="${VIEWS:-id ood}"
 MAX_STEPS="${MAX_STEPS:-400}"
 RUNNER="${RUNNER:-srun}"
 
 RUN_NAME="lstm_${RUN}"
-SPLITS_DIR="${SPLITS_ROOT}/${DATASET}/splits"
-CKPT="${MODEL_ROOT}/${DATASET}/${RUN_NAME}/best.pt"
-OUT_DIR="${METRICS_ROOT}/${DATASET}/${RUN_NAME}/completion"
+MODEL_RUN_NAME="${RUN_NAME}_holdout_${HOLDOUT_FAMILY}"
+CKPT="${MODEL_ROOT}/${DATASET}/${MODEL_RUN_NAME}/best.pt"
+OUT_DIR="${METRICS_ROOT}/${DATASET}/holdout_${HOLDOUT_FAMILY}"
 
 mkdir -p outputs/slurm "$OUT_DIR"
 
@@ -79,11 +81,14 @@ fi
 
 ARGS=(
   --checkpoint "$CKPT"
-  --splits-dir "$SPLITS_DIR"
-  --fractions $FRACTIONS
-  --max-examples-per-family "$MAX_EXAMPLES"
+  --dataset "$DATASET"
+  --holdout-family "$HOLDOUT_FAMILY"
+  --eval-root "$EVAL_ROOT"
+  --preds-root "$PREDS_ROOT"
+  --metrics-root "$METRICS_ROOT"
+  --views $VIEWS
+  --method-name "$RUN_NAME"
   --max-steps "$MAX_STEPS"
-  --out "$OUT_DIR"
 )
 
 if [[ -n "${EXTRA_ARGS:-}" ]]; then
@@ -91,9 +96,9 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
   ARGS+=($EXTRA_ARGS)
 fi
 
-printf "task_id=%s run=%s dataset=%s ckpt=%s out=%s\n" \
-  "$TASK_ID" "$RUN" "$DATASET" "$CKPT" "$OUT_DIR"
+printf "task_id=%s run=%s dataset=%s holdout=%s ckpt=%s out=%s\n" \
+  "$TASK_ID" "$RUN" "$DATASET" "$HOLDOUT_FAMILY" "$CKPT" "$OUT_DIR"
 
 time "$RUNNER" uv run python scripts/eval_lstm_completion.py "${ARGS[@]}"
 
-ls -lh "$OUT_DIR"
+find "$OUT_DIR" -maxdepth 3 -type f | sort

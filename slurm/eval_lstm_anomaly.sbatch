@@ -18,12 +18,8 @@ set -euo pipefail
 
 # Anomaly-detection (Task 3) eval for the LSTM, via sequence likelihood.
 #
-# This is a single (non-array) job so the anomaly eval set is generated exactly
-# once before any checkpoint is scored. It then loops over the run names and
-# evaluates whichever checkpoints exist (skipping missing ones).
-#
-#   1. make_eval_set.py  -> data/eval/<dataset>/{eval_input_anomaly,anomaly_truth}.csv
-#   2. eval_lstm_anomaly.py per checkpoint -> ROC-AUC + best-F1 + validator baseline
+# This evaluates whichever checkpoints exist against fixed
+# data/eval/<dataset>/holdout_<family>/{id,ood} anomaly sets.
 #
 # Submit:
 #   sbatch slurm/eval_lstm_anomaly.sbatch
@@ -32,16 +28,14 @@ set -euo pipefail
 #
 # Optional environment overrides:
 #   DATASET=valid_s005k
-#   SPLITS_ROOT=data/generated
+#   HOLDOUT_FAMILY=ic
 #   MODEL_ROOT=outputs/models
+#   PREDS_ROOT=outputs/preds
 #   METRICS_ROOT=outputs/metrics
 #   EVAL_ROOT=data/eval
 #   RUN_NAMES="lstm_teacher_forcing lstm_scheduled_sampling"  # checkpoint dirs to score
-#   N_ANOMALY_VALID=300          # valid sequences/family in the anomaly set
-#   N_ANOMALY_INVALID=300        # corrupted (invalid) sequences/family
-#   THRESHOLD=                   # fixed avg-logprob threshold; empty = sweep for best F1
-#   SEED=1729
-#   FORCE_REGEN=0                # 1 = regenerate the anomaly set even if present
+#   VIEWS="id ood"
+#   THRESHOLD=                   # fixed avg-logprob threshold; empty = tune on calibration
 #   EXTRA_ARGS="--device cuda"   # appended verbatim to the eval CLI
 
 if [[ -n "${SCRATCH:-}" ]]; then
@@ -58,44 +52,34 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 source slurm/setup_uv.sh
 
 DATASET="${DATASET:-valid_s005k}"
-SPLITS_ROOT="${SPLITS_ROOT:-data/generated}"
+HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 MODEL_ROOT="${MODEL_ROOT:-outputs/models}"
+PREDS_ROOT="${PREDS_ROOT:-outputs/preds}"
 METRICS_ROOT="${METRICS_ROOT:-outputs/metrics}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
 RUN_NAMES="${RUN_NAMES:-lstm_teacher_forcing lstm_scheduled_sampling}"
-N_ANOMALY_VALID="${N_ANOMALY_VALID:-300}"
-N_ANOMALY_INVALID="${N_ANOMALY_INVALID:-300}"
-SEED="${SEED:-1729}"
-FORCE_REGEN="${FORCE_REGEN:-0}"
+VIEWS="${VIEWS:-id ood}"
 RUNNER="${RUNNER:-srun}"
 
-SPLITS_DIR="${SPLITS_ROOT}/${DATASET}/splits"
-EVAL_DIR="${EVAL_ROOT}/${DATASET}"
+EVAL_DIR="${EVAL_ROOT}/${DATASET}/holdout_${HOLDOUT_FAMILY}"
 
 mkdir -p outputs/slurm "$EVAL_DIR"
 
-# 1. Generate the anomaly eval set once (unless it already exists).
-if [[ "$FORCE_REGEN" == "1" || ! -f "${EVAL_DIR}/eval_input_anomaly.csv" ]]; then
-  echo "generating anomaly eval set -> ${EVAL_DIR}"
-  uv run python scripts/make_eval_set.py \
-    --splits-dir "$SPLITS_DIR" \
-    --n-anomaly-valid "$N_ANOMALY_VALID" \
-    --n-anomaly-invalid "$N_ANOMALY_INVALID" \
-    --seed "$SEED" \
-    --out-dir "$EVAL_DIR"
-else
-  echo "reusing existing anomaly eval set at ${EVAL_DIR}"
+if [[ ! -f "${EVAL_DIR}/id/eval_input_anomaly.csv" || \
+      ! -f "${EVAL_DIR}/ood/eval_input_anomaly.csv" ]]; then
+  echo "missing fixed anomaly eval set under ${EVAL_DIR}; run scripts/make_all_eval_sets.py first" >&2
+  exit 2
 fi
 
-# 2. Evaluate every checkpoint that exists.
 THRESHOLD_ARGS=()
 if [[ -n "${THRESHOLD:-}" ]]; then
   THRESHOLD_ARGS=(--threshold "$THRESHOLD")
 fi
 
 for RUN in $RUN_NAMES; do
-  CKPT="${MODEL_ROOT}/${DATASET}/${RUN}/best.pt"
-  OUT_DIR="${METRICS_ROOT}/${DATASET}/${RUN}/anomaly"
+  MODEL_RUN_NAME="${RUN}_holdout_${HOLDOUT_FAMILY}"
+  CKPT="${MODEL_ROOT}/${DATASET}/${MODEL_RUN_NAME}/best.pt"
+  OUT_DIR="${METRICS_ROOT}/${DATASET}/holdout_${HOLDOUT_FAMILY}"
   if [[ ! -f "$CKPT" ]]; then
     echo "skip ${RUN}: checkpoint not found at ${CKPT}"
     continue
@@ -105,8 +89,13 @@ for RUN in $RUN_NAMES; do
 
   ARGS=(
     --checkpoint "$CKPT"
-    --eval-dir "$EVAL_DIR"
-    --out "$OUT_DIR"
+    --dataset "$DATASET"
+    --holdout-family "$HOLDOUT_FAMILY"
+    --eval-root "$EVAL_ROOT"
+    --preds-root "$PREDS_ROOT"
+    --metrics-root "$METRICS_ROOT"
+    --views $VIEWS
+    --method-name "$RUN"
     "${THRESHOLD_ARGS[@]}"
   )
   if [[ -n "${EXTRA_ARGS:-}" ]]; then
@@ -115,5 +104,5 @@ for RUN in $RUN_NAMES; do
   fi
 
   time "$RUNNER" uv run python scripts/eval_lstm_anomaly.py "${ARGS[@]}"
-  ls -lh "$OUT_DIR"
+  find "$OUT_DIR" -maxdepth 3 -type f | sort
 done
