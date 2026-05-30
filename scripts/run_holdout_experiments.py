@@ -190,6 +190,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--n", type=int, default=5)
     parser.add_argument("--alpha", type=float, default=0.4)
     parser.add_argument("--bucket", type=int, default=5)
+    parser.add_argument(
+        "--hmm-states",
+        type=int,
+        default=None,
+        help="Hidden states for the HMM baseline. Defaults to --n.",
+    )
+    parser.add_argument("--hmm-iterations", type=int, default=8)
+    parser.add_argument("--hmm-smoothing", type=float, default=1e-2)
+    parser.add_argument("--seed", type=int, default=1729)
     return parser.parse_args()
 
 
@@ -267,6 +276,10 @@ def main() -> None:
                     n=args.n,
                     alpha=args.alpha,
                     bucket=args.bucket,
+                    hmm_states=args.hmm_states,
+                    hmm_iterations=args.hmm_iterations,
+                    hmm_smoothing=args.hmm_smoothing,
+                    seed=args.seed,
                 )
 
                 threshold, tuning = _resolve_anomaly_threshold(
