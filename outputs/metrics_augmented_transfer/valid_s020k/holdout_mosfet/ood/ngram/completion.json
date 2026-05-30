@@ -1,0 +1,16 @@
+{
+  "all": {
+    "n": 200,
+    "exact_match": 0.0,
+    "norm_edit_distance": 0.7296,
+    "token_accuracy": 0.1216,
+    "block_accuracy": 0.4152
+  },
+  "mosfet": {
+    "n": 200,
+    "exact_match": 0.0,
+    "norm_edit_distance": 0.7296,
+    "token_accuracy": 0.1216,
+    "block_accuracy": 0.4152
+  }
+}

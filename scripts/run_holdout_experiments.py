@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Train and evaluate baseline methods on dataset-size x holdout-family eval sets."""
-
-from __future__ import annotations
-
 import argparse
 import json
 import re
@@ -12,6 +8,7 @@ from typing import Any
 from zero_hack import PROJECT_ROOT
 from zero_hack.eval import io
 from zero_hack.eval.score import TASKS, score_task
+from zero_hack.models.anomaly_threshold import tune_anomaly_threshold
 from zero_hack.models.classic_baselines import (
     CLASSIC_BASELINES,
     build_classic_baseline,
@@ -177,11 +174,61 @@ def _parse_args() -> argparse.Namespace:
         default="likelihood",
         help="Use likelihood for model-based anomaly detection; validator is an oracle baseline.",
     )
-    parser.add_argument("--anomaly-threshold", type=float, default=-1.0)
+    parser.add_argument(
+        "--val-anomaly-valid",
+        type=int,
+        default=200,
+        help="Valid sequences/family in the tuning set (matches the eval ~0.39 anomaly mix).",
+    )
+    parser.add_argument(
+        "--val-anomaly-invalid",
+        type=int,
+        default=129,
+        help="Invalid sequences/family in the tuning set (matches the eval ~0.39 anomaly mix).",
+    )
+    parser.add_argument("--val-seed", type=int, default=1729)
     parser.add_argument("--n", type=int, default=5)
     parser.add_argument("--alpha", type=float, default=0.4)
     parser.add_argument("--bucket", type=int, default=5)
     return parser.parse_args()
+
+
+def _resolve_anomaly_threshold(
+    model: Any,
+    bundle: Any,
+    *,
+    method: str,
+    n_valid: int,
+    n_invalid: int,
+    seed: int,
+    tasks: tuple[str, ...],
+) -> tuple[float, dict | None]:
+    # Tune one global threshold per fit on the ID validation split (train
+    # families only -> leakage-free), then apply it to both id and ood views.
+    if "anomaly" not in tasks or method != "likelihood":
+        return -1.0, None
+
+    result = tune_anomaly_threshold(
+        model,
+        bundle.records["valid"],
+        n_valid=n_valid,
+        n_invalid=n_invalid,
+        seed=seed,
+    )
+    record = {
+        "source": "auto",
+        "objective": "f1",
+        "tuned_on": "id_validation_train_families",
+        "train_families": list(bundle.train_families),
+        "threshold": result.threshold,
+        "val_f1": result.f1,
+        "val_precision": result.precision,
+        "val_recall": result.recall,
+        "n_valid_per_family": n_valid,
+        "n_invalid_per_family": n_invalid,
+        "seed": seed,
+    }
+    return result.threshold, record
 
 
 def main() -> None:
@@ -222,6 +269,22 @@ def main() -> None:
                     bucket=args.bucket,
                 )
 
+                threshold, tuning = _resolve_anomaly_threshold(
+                    model,
+                    bundle,
+                    method=args.anomaly_method,
+                    n_valid=args.val_anomaly_valid,
+                    n_invalid=args.val_anomaly_invalid,
+                    seed=args.val_seed,
+                    tasks=tasks,
+                )
+                if tuning is not None:
+                    print(
+                        f"--> tuned anomaly threshold for {model_name}: {threshold:.4f} "
+                        f"(val F1={tuning['val_f1']:.4f} "
+                        f"P={tuning['val_precision']:.4f} R={tuning['val_recall']:.4f})"
+                    )
+
                 for view in args.views:
                     eval_dir = eval_root / dataset / f"holdout_{holdout_family}" / view
                     if not eval_dir.exists():
@@ -242,7 +305,7 @@ def main() -> None:
                         pred_dir=pred_dir,
                         tasks=tasks,
                         anomaly_method=args.anomaly_method,
-                        anomaly_threshold=args.anomaly_threshold,
+                        anomaly_threshold=threshold,
                     )
                     results = _score_predictions(
                         eval_dir=eval_dir,
@@ -250,6 +313,10 @@ def main() -> None:
                         metrics_dir=metrics_dir,
                         tasks=tasks,
                     )
+                    if tuning is not None:
+                        (metrics_dir / "anomaly_threshold.json").write_text(
+                            json.dumps(tuning, indent=2) + "\n", encoding="utf-8"
+                        )
                     compact = {
                         task: metrics.get("all", metrics) for task, metrics in results.items()
                     }

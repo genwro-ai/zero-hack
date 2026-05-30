@@ -1,0 +1,36 @@
+{
+  "all": {
+    "n": 100,
+    "positive_class": "anomaly (IS_VALID=0)",
+    "accuracy": 0.5,
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6667,
+    "confusion_matrix": {
+      "tp": 50,
+      "fp": 50,
+      "tn": 0,
+      "fn": 0
+    },
+    "roc_auc": 0.5972,
+    "rule_attribution_accuracy": 1.0,
+    "n_detected_violations": 50
+  },
+  "ic": {
+    "n": 100,
+    "positive_class": "anomaly (IS_VALID=0)",
+    "accuracy": 0.5,
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6667,
+    "confusion_matrix": {
+      "tp": 50,
+      "fp": 50,
+      "tn": 0,
+      "fn": 0
+    },
+    "roc_auc": 0.5972,
+    "rule_attribution_accuracy": 1.0,
+    "n_detected_violations": 50
+  }
+}

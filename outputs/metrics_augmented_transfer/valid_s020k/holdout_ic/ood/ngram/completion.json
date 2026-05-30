@@ -1,0 +1,16 @@
+{
+  "all": {
+    "n": 200,
+    "exact_match": 0.0,
+    "norm_edit_distance": 0.7321,
+    "token_accuracy": 0.0833,
+    "block_accuracy": 0.514
+  },
+  "ic": {
+    "n": 200,
+    "exact_match": 0.0,
+    "norm_edit_distance": 0.7321,
+    "token_accuracy": 0.0833,
+    "block_accuracy": 0.514
+  }
+}

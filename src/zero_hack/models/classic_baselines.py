@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 from typing import Any, Protocol
 
@@ -65,6 +63,14 @@ def complete_sequence(
     return produced
 
 
+def sequence_avg_logprob(
+    model: ClassicBaselineModel,
+    family: str,
+    steps: list[str] | tuple[str, ...],
+) -> float:
+    return model.score_sequence(family, steps) / max(1, len(steps))
+
+
 def predict_anomaly(
     model: ClassicBaselineModel,
     family: str,
@@ -84,7 +90,7 @@ def predict_anomaly(
     if method != "likelihood":
         raise ValueError("anomaly method must be one of: validator, likelihood")
 
-    avg_logprob = model.score_sequence(family, sequence) / max(1, len(sequence))
+    avg_logprob = sequence_avg_logprob(model, family, sequence)
     score = 1.0 / (1.0 + math.exp(-(avg_logprob - threshold)))
     valid = avg_logprob >= threshold
     return {

@@ -1,0 +1,23 @@
+{
+  "splits_dir": "data/generated/augmented_s001k/splits",
+  "split": "family_tests",
+  "holdout_family": "mosfet",
+  "train_families": [
+    "igbt",
+    "ic"
+  ],
+  "eval_families": [
+    "mosfet"
+  ],
+  "evaluated_families": [
+    "mosfet"
+  ],
+  "n_valid_per_family": 100,
+  "completion_fractions": [
+    0.6,
+    0.8
+  ],
+  "n_anomaly_valid_per_family": 50,
+  "n_anomaly_invalid_per_family": 50,
+  "seed": 2917
+}

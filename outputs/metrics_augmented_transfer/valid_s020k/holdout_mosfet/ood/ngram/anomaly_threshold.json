@@ -1,0 +1,16 @@
+{
+  "source": "auto",
+  "objective": "f1",
+  "tuned_on": "id_validation_train_families",
+  "train_families": [
+    "igbt",
+    "ic"
+  ],
+  "threshold": -0.4219941913265811,
+  "val_f1": 1.0,
+  "val_precision": 1.0,
+  "val_recall": 1.0,
+  "n_valid_per_family": 200,
+  "n_invalid_per_family": 129,
+  "seed": 1729
+}

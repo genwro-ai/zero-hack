@@ -10,46 +10,9 @@ import random
 from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
+from zero_hack.eval.anomaly_synth import corrupt_steps
 from zero_hack.eval.io import join_steps
-from zero_hack.eval.validator import first_violated_rule, is_valid
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, FAMILIES, load_split_records
-
-_CLEAN_HINTS = ("CLEAN", "RCA", "HF DIP", "RINSE", "DRY WAFER")
-
-
-def _corrupt(
-    steps: list[str], rng: random.Random, max_tries: int = 12
-) -> tuple[list[str], str] | None:
-    """Return (corrupted_steps, first_rule) that the validator flags, or None."""
-    n = len(steps)
-    for _ in range(max_tries):
-        op = rng.choice(("drop_clean", "drop_develop", "ship_early", "test_early", "swap"))
-        seq = list(steps)
-
-        if op == "drop_clean":
-            idxs = [i for i, s in enumerate(seq) if any(h in s for h in _CLEAN_HINTS)]
-            if idxs:
-                del seq[rng.choice(idxs)]
-        elif op == "drop_develop":
-            idxs = [i for i, s in enumerate(seq) if s.startswith("DEVELOP")]
-            if idxs:
-                del seq[rng.choice(idxs)]
-        elif op == "ship_early" and "SHIP LOT" in seq:
-            seq.remove("SHIP LOT")
-            seq.insert(rng.randint(0, max(0, len(seq) // 3)), "SHIP LOT")
-        elif op == "test_early":
-            idxs = [i for i, s in enumerate(seq) if s.endswith("TEST") and "WAFER SORT" not in s]
-            if idxs:
-                step = seq.pop(rng.choice(idxs))
-                seq.insert(rng.randint(0, max(0, len(seq) // 4)), step)
-        elif op == "swap" and n > 6:
-            i = rng.randint(0, n - 2)
-            j = rng.randint(0, n - 2)
-            seq[i], seq[j] = seq[j], seq[i]
-
-        if seq != steps and not is_valid(seq):
-            return seq, first_violated_rule(seq) or "UNKNOWN"
-    return None
 
 
 def _write(path: Path, header: list[str], rows: list[list]) -> None:
@@ -143,7 +106,7 @@ def main() -> None:
                 break
             steps = list(rec.steps)
             if kept_invalid < args.n_anomaly_invalid:
-                corrupted = _corrupt(steps, rng)
+                corrupted = corrupt_steps(steps, rng)
                 if corrupted is None:
                     continue
                 seq, rule = corrupted

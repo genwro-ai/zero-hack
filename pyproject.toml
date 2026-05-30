@@ -28,8 +28,12 @@ explicit = true
 [dependency-groups]
 dev = [
     "pre-commit>=4.6.0",
+    "pytest>=8.3.0",
     "ruff>=0.15.15",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [project.scripts]
 zero-hack-info = "zero_hack:main"
