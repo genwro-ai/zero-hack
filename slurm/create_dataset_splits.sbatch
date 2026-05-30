@@ -27,6 +27,8 @@ set -euo pipefail
 #
 # Optional environment overrides:
 #   OUTPUT_ROOT=data/generated
+#   INDUSTRIAL_DIR=data/industrial
+#   INCLUDE_INDUSTRIAL=1
 #   FAMILIES="mosfet igbt ic"
 #   FORCE=1
 #   SPLIT_SEED=1729
@@ -59,6 +61,8 @@ DATASETS=(
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 DATASET="${DATASETS[$TASK_ID]}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
+INDUSTRIAL_DIR="${INDUSTRIAL_DIR:-data/industrial}"
+INCLUDE_INDUSTRIAL="${INCLUDE_INDUSTRIAL:-1}"
 FAMILIES="${FAMILIES:-mosfet igbt ic}"
 SPLIT_SEED="${SPLIT_SEED:-1729}"
 FORCE="${FORCE:-0}"
@@ -73,9 +77,14 @@ ARGS=(
   --dataset "$DATASET"
   --input-dir "$INPUT_DIR"
   --output-dir "$OUTPUT_DIR"
+  --industrial-dir "$INDUSTRIAL_DIR"
   --families $FAMILIES
   --seed "$SPLIT_SEED"
 )
+
+if [[ "$INCLUDE_INDUSTRIAL" != "1" ]]; then
+  ARGS+=(--no-include-industrial)
+fi
 
 if [[ "$FORCE" == "1" ]]; then
   ARGS+=(--force)

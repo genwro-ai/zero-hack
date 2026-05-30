@@ -1,20 +1,3 @@
-"""Map individual process steps to coarse functional blocks.
-
-Block-level accuracy (Task 2) scores whether a completion has the right
-*process shape* rather than the exact step strings. We collapse each step into
-one of the functional categories from ``generation_rules.md`` Section 1 / the
-backbone blocks in Section 2.2. Classification is keyword based and order
-sensitive: the first matching rule in :data:`_BLOCK_RULES` wins, so more
-specific cues (``MEASURE ...``) are checked before generic ones (``... CLEAN``).
-
-This mapping is *our* interpretation of "block-level accuracy"; when the
-organizer ``eval_metrics.py`` ships, defer to its definition.
-"""
-
-from __future__ import annotations
-
-# Ordered (block_label, keyword) rules. A step is assigned the first block whose
-# keyword is found per the matching mode. Order encodes priority.
 _BLOCK_RULES: tuple[tuple[str, str, str], ...] = (
     # (block, needle, mode)  where mode in {"prefix", "substr", "exact"}
     ("LOGISTICS", "RECEIVE WAFER LOT", "exact"),

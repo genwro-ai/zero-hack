@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Task 1/2/3 submission files from the symbolic baselines.
-
-Fits a next-step baseline (``ngram`` or ``most_frequent``) on the train split,
-then emits the three submission CSVs for a given eval set:
-
-- ``nextstep.csv``   top-5 next steps           (Task 1)
-- ``completion.csv`` autoregressive completion  (Task 2)
-- ``anomaly.csv``    validator oracle or n-gram likelihood (Task 3)
-
-Pair with ``scripts/eval_metrics.py`` to score, and ``scripts/make_eval_set.py``
-to build the eval inputs + ground truth. Lets us produce the required
-baseline-vs-trained comparison on identical inputs.
-"""
+"""Generate Task 1/2/3 prediction files from baseline models."""
 
 from __future__ import annotations
 
@@ -89,7 +77,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model", default="ngram", choices=("ngram", "most_frequent", "xgboost"))
     parser.add_argument("--raw-dir", default=str(DEFAULT_RAW_DIR))
+    parser.add_argument("--industrial-dir", default=None)
+    parser.add_argument("--no-include-industrial", action="store_true")
     parser.add_argument("--limit-per-family", type=int, default=None)
+    parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
     parser.add_argument("--eval-dir", default=str(PROJECT_ROOT / "outputs" / "eval"))
     parser.add_argument("--out-dir", default=None, help="Default: outputs/preds/<model>.")
     parser.add_argument("--tasks", nargs="+", default=["next_step", "completion", "anomaly"])
@@ -114,7 +105,13 @@ def main() -> None:
         Path(args.out_dir) if args.out_dir else PROJECT_ROOT / "outputs" / "preds" / args.model
     )
 
-    bundle = load_record_splits(args.raw_dir, limit_per_family=args.limit_per_family)
+    bundle = load_record_splits(
+        args.raw_dir,
+        industrial_dir=args.industrial_dir,
+        include_industrial=not args.no_include_industrial,
+        holdout_family=args.holdout_family,
+        limit_per_family=args.limit_per_family,
+    )
     print(f"counts: {bundle.counts()}")
     model = build_model(
         args.model,

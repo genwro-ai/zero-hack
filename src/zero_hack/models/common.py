@@ -1,18 +1,3 @@
-"""Shared plumbing for the next-step models (neural + symbolic).
-
-This module owns everything the individual model packages should *not*
-re-implement: loading raw family CSVs into deterministic, leakage-free
-train/valid/test splits, building the Torch dataloaders, and the generic
-neural train / evaluate / top-k loops that operate on any ``nn.Module``
-returning next-step logits of shape ``[batch, vocab_size]``.
-
-The four model packages (``transformer``, ``lstm``, ``gru``, ``ngram``) each
-own only their architecture plus a thin CLI; they delegate data and training
-here so every baseline is compared on identical splits and metrics.
-"""
-
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,50 +8,81 @@ from torch.utils.data import DataLoader
 
 from zero_hack import PROJECT_ROOT
 from zero_hack.data import (
+    FAMILY_FILE_NAMES,
     NextStepDataset,
     SequenceRecord,
     Vocabulary,
     build_vocabulary,
     dedupe_records,
+    load_industrial_family_records,
     load_raw_family_records,
     make_torch_dataloader,
+    namespace_sequence_ids,
 )
-from zero_hack.metrics import TopKAccumulator
+from zero_hack.models.topk import TopKAccumulator
 from zero_hack.splits import SPLIT_NAMES, split_for
-from zero_hack.vocab import FAMILIES
 
 DEFAULT_RAW_DIR = PROJECT_ROOT / "data" / "generated" / "valid_s005k" / "raw"
+DEFAULT_INDUSTRIAL_DIR = PROJECT_ROOT / "data" / "industrial"
+FAMILIES = tuple(FAMILY_FILE_NAMES)
+TEST_SPLIT_PREFIX = "test_"
 
 
-# --------------------------------------------------------------------------- #
-# Data: deterministic, dedup-aware splits shared by every model               #
-# --------------------------------------------------------------------------- #
+def family_test_split(family: str) -> str:
+    return f"{TEST_SPLIT_PREFIX}{family.lower()}"
+
+
 @dataclass(frozen=True)
 class DataBundle:
-    """Everything a model needs: the vocab plus split -> records."""
-
     vocabulary: Vocabulary
     records: dict[str, list[SequenceRecord]]
+    train_families: tuple[str, ...]
+    holdout_family: str | None = None
 
     def counts(self) -> dict[str, int]:
-        return {name: len(self.records[name]) for name in SPLIT_NAMES}
+        return {name: len(records) for name, records in self.records.items()}
+
+    @property
+    def test_split_names(self) -> tuple[str, ...]:
+        return tuple(
+            split_name
+            for family in FAMILIES
+            if (split_name := family_test_split(family)) in self.records
+        )
 
 
 def load_record_splits(
     raw_dir: str | Path = DEFAULT_RAW_DIR,
     *,
+    industrial_dir: str | Path | None = DEFAULT_INDUSTRIAL_DIR,
+    include_industrial: bool = True,
     families: tuple[str, ...] = FAMILIES,
+    holdout_family: str | None = None,
     limit_per_family: int | None = None,
 ) -> DataBundle:
-    """Load raw family CSVs, dedupe, and split by content hash (no leakage).
-
-    The vocabulary is built from the *train* split only. ``limit_per_family``
-    truncates each family before splitting to keep smoke runs fast.
-    """
+    """Load raw CSVs, dedupe, and split by sequence hash."""
     raw_dir = Path(raw_dir)
+    industrial_dir = DEFAULT_INDUSTRIAL_DIR if industrial_dir is None else Path(industrial_dir)
+    families = tuple(family.lower() for family in families)
+    if holdout_family is not None:
+        holdout_family = holdout_family.lower()
+        if holdout_family not in families:
+            raise ValueError(f"holdout_family={holdout_family!r} is not in {families}")
+    train_families = tuple(family for family in families if family != holdout_family)
+    if not train_families:
+        raise ValueError("At least one training family is required")
+
     records: list[SequenceRecord] = []
     for family in families:
-        fam_records = load_raw_family_records(raw_dir, family)
+        fam_records = namespace_sequence_ids(load_raw_family_records(raw_dir, family), "generated")
+        if include_industrial:
+            fam_records = (
+                namespace_sequence_ids(
+                    load_industrial_family_records(industrial_dir, family),
+                    "industrial",
+                )
+                + fam_records
+            )
         if limit_per_family is not None:
             fam_records = fam_records[:limit_per_family]
         records.extend(fam_records)
@@ -74,11 +90,25 @@ def load_record_splits(
     records = dedupe_records(records)
 
     by_split: dict[str, list[SequenceRecord]] = {name: [] for name in SPLIT_NAMES}
+    for family in families:
+        by_split[family_test_split(family)] = []
+
     for record in records:
-        by_split[split_for(record.family, list(record.steps))].append(record)
+        split = split_for(record.family, list(record.steps))
+        if split == "test":
+            by_split[family_test_split(record.family)].append(record)
+            if record.family != holdout_family:
+                by_split["test"].append(record)
+        elif record.family != holdout_family:
+            by_split[split].append(record)
 
     vocabulary = build_vocabulary(by_split["train"])
-    return DataBundle(vocabulary=vocabulary, records=by_split)
+    return DataBundle(
+        vocabulary=vocabulary,
+        records=by_split,
+        train_families=train_families,
+        holdout_family=holdout_family,
+    )
 
 
 def make_dataset(
@@ -101,9 +131,8 @@ def make_loaders(
     max_context: int = 192,
     num_workers: int = 0,
 ) -> dict[str, DataLoader]:
-    """Build train/valid/test dataloaders from a :class:`DataBundle`."""
     loaders: dict[str, DataLoader] = {}
-    for split in SPLIT_NAMES:
+    for split in bundle.records:
         dataset = make_dataset(bundle, split, max_context=max_context)
         loaders[split] = make_torch_dataloader(
             dataset,
@@ -114,11 +143,7 @@ def make_loaders(
     return loaders
 
 
-# --------------------------------------------------------------------------- #
-# Devices                                                                      #
-# --------------------------------------------------------------------------- #
 def pick_device(prefer: str | None = None) -> torch.device:
-    """Return the best available device (cuda > mps > cpu), honoring ``prefer``."""
     if prefer:
         return torch.device(prefer)
     if torch.cuda.is_available():
@@ -132,11 +157,6 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-# --------------------------------------------------------------------------- #
-# Generic neural training / evaluation                                        #
-# --------------------------------------------------------------------------- #
-# A model forward takes (input_ids[B,T], attention_mask[B,T] bool) and returns
-# next-step logits of shape [B, vocab_size].
 NeuralModel = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
@@ -159,7 +179,6 @@ def train_model(
     device: torch.device,
     pad_id: int = 0,
 ) -> nn.Module:
-    """Minimal next-step training loop. Returns the trained model (in place)."""
     model.to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.lr, weight_decay=config.weight_decay
@@ -212,7 +231,6 @@ def evaluate_model(
     k: int = 3,
     max_batches: int | None = None,
 ) -> dict[str, dict[str, float]]:
-    """Top-1 / top-k next-step accuracy, broken down by family."""
     model.eval()
     acc = TopKAccumulator(k=k)
     for step, batch in enumerate(loader):

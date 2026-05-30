@@ -1,12 +1,3 @@
-"""Thin CLI to train + evaluate the small LSTM baseline.
-
-All data loading, training, and evaluation are delegated to
-``zero_hack.models.common`` so every baseline shares identical splits and
-metrics. This module only builds the architecture and wires up the CLI.
-"""
-
-from __future__ import annotations
-
 import argparse
 
 from zero_hack.models.common import (
@@ -24,7 +15,6 @@ from zero_hack.models.lstm.model import LSTMConfig, LSTMModel
 
 
 def build_model(bundle: DataBundle, config: LSTMConfig) -> LSTMModel:
-    """Build an :class:`LSTMModel` sized for the bundle's vocabulary."""
     vocab_size = len(bundle.vocabulary.id_to_token)
     return LSTMModel(
         vocab_size=vocab_size,
@@ -36,7 +26,10 @@ def build_model(bundle: DataBundle, config: LSTMConfig) -> LSTMModel:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the small LSTM baseline.")
     parser.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
+    parser.add_argument("--industrial-dir", default=None)
+    parser.add_argument("--no-include-industrial", action="store_true")
     parser.add_argument("--limit-per-family", type=int, default=None)
+    parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--batch-size", type=int, default=128)
@@ -51,7 +44,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    bundle = load_record_splits(args.raw_dir, limit_per_family=args.limit_per_family)
+    bundle = load_record_splits(
+        args.raw_dir,
+        industrial_dir=args.industrial_dir or None,
+        include_industrial=not args.no_include_industrial,
+        holdout_family=args.holdout_family,
+        limit_per_family=args.limit_per_family,
+    )
     print(f"counts: {bundle.counts()}")
 
     loaders = make_loaders(
@@ -79,14 +78,17 @@ def main() -> None:
         pad_id=bundle.vocabulary.pad_id,
     )
 
-    summary = evaluate_model(
-        model,
-        loaders["test"],
-        device=device,
-        k=args.k,
-        max_batches=args.max_eval_batches,
-    )
-    print(f"test summary: {summary}")
+    for split in bundle.test_split_names:
+        summary = evaluate_model(
+            model,
+            loaders[split],
+            device=device,
+            k=args.k,
+            max_batches=args.max_eval_batches,
+        )
+        label = split.removeprefix("test_")
+        role = "ood" if label == bundle.holdout_family else "id"
+        print(f"{split} ({role}) summary: {summary}")
 
 
 if __name__ == "__main__":

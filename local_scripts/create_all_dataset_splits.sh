@@ -5,6 +5,8 @@ set -euo pipefail
 
 DATASETS="${DATASETS:-valid_s005k valid_s010k valid_s020k valid_s100k valid_s500k valid_s1000k}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
+INDUSTRIAL_DIR="${INDUSTRIAL_DIR:-data/industrial}"
+INCLUDE_INDUSTRIAL="${INCLUDE_INDUSTRIAL:-1}"
 FAMILIES="${FAMILIES:-mosfet igbt ic}"
 FORCE="${FORCE:-0}"
 SPLIT_SEED="${SPLIT_SEED:-1729}"
@@ -18,6 +20,8 @@ Options:
   --datasets "..."        space-separated dataset labels
   --families "..."        space-separated families
   --output-root PATH      generated-data root
+  --industrial-dir PATH   provided industrial-data root
+  --no-include-industrial use only generated raw CSVs
   --seed INT              split seed
   -h, --help              show this help
 
@@ -26,6 +30,8 @@ Environment variables with the same names are also supported:
   DATASETS="valid_s005k valid_s010k"
   FAMILIES="mosfet igbt ic"
   OUTPUT_ROOT=data/generated
+  INDUSTRIAL_DIR=data/industrial
+  INCLUDE_INDUSTRIAL=1
   SPLIT_SEED=1729
 EOF
 }
@@ -47,6 +53,14 @@ while [[ $# -gt 0 ]]; do
     --output-root)
       OUTPUT_ROOT="${2:?Missing value for --output-root}"
       shift 2
+      ;;
+    --industrial-dir)
+      INDUSTRIAL_DIR="${2:?Missing value for --industrial-dir}"
+      shift 2
+      ;;
+    --no-include-industrial)
+      INCLUDE_INDUSTRIAL=0
+      shift
       ;;
     --seed)
       SPLIT_SEED="${2:?Missing value for --seed}"
@@ -77,9 +91,14 @@ for dataset in $DATASETS; do
     --dataset "$dataset"
     --input-dir "$input_dir"
     --output-dir "$output_dir"
+    --industrial-dir "$INDUSTRIAL_DIR"
     --families $FAMILIES
     --seed "$SPLIT_SEED"
   )
+
+  if [[ "$INCLUDE_INDUSTRIAL" != "1" ]]; then
+    args+=(--no-include-industrial)
+  fi
 
   if [[ "$FORCE" == "1" ]]; then
     args+=(--force)

@@ -13,8 +13,8 @@ Models: ngram, most_frequent
 
 | Model | exact | norm-edit-dist | token-acc | block-acc |
 |---|---|---|---|---|
-| ngram | 0.0050 | 0.2243 | 0.4012 | 0.9912 |
-| most_frequent | 0.0017 | 0.2458 | 0.4276 | 0.9833 |
+| ngram | 0.0050 | 0.2243 | 0.3844 | 0.9641 |
+| most_frequent | 0.0017 | 0.2458 | 0.4040 | 0.9605 |
 
 ### Task 3 — Anomaly detection
 
@@ -22,4 +22,3 @@ Models: ngram, most_frequent
 |---|---|---|---|---|---|---|---|
 | ngram | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0 | 1.0 | 150 |
 | most_frequent | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0 | 1.0 | 150 |
-

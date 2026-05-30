@@ -1,7 +1,8 @@
 import re
 
 import numpy as np
-from zero_hack.vocab import FAMILY_TO_ID
+
+from zero_hack.data import FAMILY_FILE_NAMES
 
 CATEGORIES = (
     "logistics",
@@ -22,6 +23,7 @@ CATEGORIES = (
     "other",
 )
 CATEGORY_INDEX = {name: idx for idx, name in enumerate(CATEGORIES)}
+FAMILY_TO_ID = {family: idx for idx, family in enumerate(FAMILY_FILE_NAMES)}
 
 UNKNOWN_FAMILY_ID = len(FAMILY_TO_ID)
 SINCE_CAP = 64
@@ -29,7 +31,6 @@ _ALIGN_LEVEL = re.compile(r"LEVEL\s+(\d+)")
 
 
 def categorize(step: str) -> str:
-    """Map a step name to a coarse functional category."""
     s = step.upper()
     if "STRIP" in s and "RESIST" in s:
         return "strip"

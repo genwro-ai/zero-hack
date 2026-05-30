@@ -1,9 +1,3 @@
-"""Thin CLI to train/evaluate the small GRU baseline.
-
-All data loading, splitting, training, and evaluation is delegated to
-``zero_hack.models.common``; this module only wires the architecture in.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -23,7 +17,6 @@ from zero_hack.models.gru.model import GRUConfig, GRUModel
 
 
 def build_model(bundle: DataBundle, config: GRUConfig) -> GRUModel:
-    """Construct a :class:`GRUModel` sized for ``bundle``'s vocabulary."""
     vocab = bundle.vocabulary
     return GRUModel(
         vocab_size=len(vocab.id_to_token),
@@ -35,7 +28,10 @@ def build_model(bundle: DataBundle, config: GRUConfig) -> GRUModel:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the small GRU baseline.")
     parser.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
+    parser.add_argument("--industrial-dir", default=None)
+    parser.add_argument("--no-include-industrial", action="store_true")
     parser.add_argument("--limit-per-family", type=int, default=None)
+    parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--batch-size", type=int, default=128)
@@ -52,6 +48,9 @@ def main() -> None:
 
     bundle = load_record_splits(
         raw_dir=args.raw_dir,
+        industrial_dir=args.industrial_dir or None,
+        include_industrial=not args.no_include_industrial,
+        holdout_family=args.holdout_family,
         limit_per_family=args.limit_per_family,
     )
     print(f"counts: {bundle.counts()}")
@@ -82,14 +81,17 @@ def main() -> None:
         pad_id=bundle.vocabulary.pad_id,
     )
 
-    summary = evaluate_model(
-        model,
-        loaders["test"],
-        device=device,
-        k=args.k,
-        max_batches=args.max_eval_batches,
-    )
-    print(f"test summary: {summary}")
+    for split in bundle.test_split_names:
+        summary = evaluate_model(
+            model,
+            loaders[split],
+            device=device,
+            k=args.k,
+            max_batches=args.max_eval_batches,
+        )
+        label = split.removeprefix("test_")
+        role = "ood" if label == bundle.holdout_family else "id"
+        print(f"{split} ({role}) summary: {summary}")
 
 
 if __name__ == "__main__":

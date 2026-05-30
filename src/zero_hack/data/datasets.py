@@ -13,6 +13,11 @@ FAMILY_FILE_NAMES = {
     "igbt": "IGBT.csv",
     "ic": "IC.csv",
 }
+FAMILY_REFERENCE_FILE_NAMES = {
+    "mosfet": "MOSFET_variants.csv",
+    "igbt": "IGBT_variants.csv",
+    "ic": "IC_variants.csv",
+}
 
 SPECIAL_TOKENS = ("<PAD>", "<BOS>", "<EOS>", "<UNK_STEP>")
 FAMILY_TOKENS = {
@@ -103,8 +108,27 @@ def load_raw_family_records(raw_dir: str | Path, family: str) -> list[SequenceRe
     return load_sequence_records(path, family=family_key)
 
 
+def load_industrial_family_records(
+    industrial_dir: str | Path,
+    family: str,
+) -> list[SequenceRecord]:
+    family_key = normalize_family(family)
+    path = Path(industrial_dir) / FAMILY_REFERENCE_FILE_NAMES[family_key]
+    return load_sequence_records(path, family=family_key)
+
+
+def namespace_sequence_ids(records: list[SequenceRecord], prefix: str) -> list[SequenceRecord]:
+    return [
+        SequenceRecord(
+            family=record.family,
+            sequence_id=f"{prefix}_{record.sequence_id}",
+            steps=record.steps,
+        )
+        for record in records
+    ]
+
+
 def write_sequence_records(path: str | Path, records: list[SequenceRecord]) -> None:
-    """Write long-format records with FAMILY, SEQUENCE_ID, STEP columns."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -116,7 +140,6 @@ def write_sequence_records(path: str | Path, records: list[SequenceRecord]) -> N
 
 
 def dedupe_records(records: list[SequenceRecord]) -> list[SequenceRecord]:
-    """Remove exact duplicate full sequences within each family."""
     seen: set[tuple[str, tuple[str, ...]]] = set()
     deduped: list[SequenceRecord] = []
     for record in records:
@@ -134,7 +157,6 @@ def split_records(
     valid_ratio: float = 0.1,
     seed: int = 1729,
 ) -> dict[str, list[SequenceRecord]]:
-    """Return deterministic train/valid/test splits."""
     if not 0 < train_ratio < 1:
         raise ValueError("train_ratio must be between 0 and 1")
     if not 0 <= valid_ratio < 1:
@@ -154,7 +176,6 @@ def split_records(
 
 
 def build_vocabulary(records: list[SequenceRecord], min_count: int = 1) -> Vocabulary:
-    """Build a token vocabulary from records."""
     counts: Counter[str] = Counter()
     for record in records:
         counts.update(record.steps)
@@ -167,13 +188,6 @@ def build_vocabulary(records: list[SequenceRecord], min_count: int = 1) -> Vocab
 
 
 class NextStepDataset:
-    """Next-token prediction dataset over process sequences.
-
-    This class intentionally does not require Torch. Its items are dictionaries
-    of Python lists/ints. Use `collate_next_step_batch` or `make_torch_dataloader`
-    when Torch is available.
-    """
-
     def __init__(
         self,
         records: list[SequenceRecord],
@@ -218,7 +232,6 @@ class NextStepDataset:
 
 
 def collate_next_step_batch(batch: list[dict[str, Any]], pad_id: int) -> dict[str, Any]:
-    """Collate next-step examples into Torch tensors."""
     max_len = max(len(item["input_ids"]) for item in batch)
     input_ids = []
     attention_mask = []
@@ -244,7 +257,6 @@ def make_torch_dataloader(
     shuffle: bool = True,
     num_workers: int = 0,
 ) -> DataLoader:
-    """Create a Torch DataLoader for `NextStepDataset`."""
     return DataLoader(
         dataset,
         batch_size=batch_size,

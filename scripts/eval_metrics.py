@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--eval-input",
         default=None,
-        help="eval_input_valid.csv, used for per-family breakdown (Tasks 1 & 2).",
+        help="Eval input CSV, used for per-family breakdown.",
     )
     parser.add_argument("--json", default=None, help="Optional path to also write metrics as JSON.")
     return parser.parse_args()

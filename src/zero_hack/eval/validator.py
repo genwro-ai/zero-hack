@@ -1,14 +1,3 @@
-"""Bridge to the canonical process-rule validator.
-
-The 10 forbidden-pattern rules are implemented once, in the track's
-``data/industrial/generate_sequences.py`` (``validate_sequence``). We load that
-module by path rather than re-implementing the rules, so the validator-oracle
-anomaly baseline and the rule-attribution metric stay in lock-step with the
-authoritative grammar.
-"""
-
-from __future__ import annotations
-
 import importlib.util
 from functools import lru_cache
 from types import ModuleType

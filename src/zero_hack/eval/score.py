@@ -1,12 +1,3 @@
-"""File-level scoring orchestrators: read CSVs, dispatch to the metric modules.
-
-These wrap the pure metric functions with the submission/ground-truth readers so
-both the CLI (``scripts/eval_metrics.py``) and notebooks can score a prediction
-file against a ground-truth file in one call.
-"""
-
-from __future__ import annotations
-
 from pathlib import Path
 
 from zero_hack.eval import io
@@ -21,6 +12,12 @@ def _families_from_input(eval_input: str | Path | None) -> dict[str, str] | None
     if eval_input is None:
         return None
     return {row["example_id"]: row["family"] for row in io.read_eval_input_valid(eval_input)}
+
+
+def _families_from_anomaly_input(eval_input: str | Path | None) -> dict[str, str] | None:
+    if eval_input is None:
+        return None
+    return {row["example_id"]: row["family"] for row in io.read_eval_input_anomaly(eval_input)}
 
 
 def score_next_step_files(
@@ -50,11 +47,12 @@ def score_completion_files(
 def score_anomaly_files(
     ground_truth: str | Path,
     predictions: str | Path,
-    eval_input: str | Path | None = None,  # noqa: ARG001 (kept for a uniform signature)
+    eval_input: str | Path | None = None,
 ) -> dict:
     return score_anomaly(
         io.read_anomaly_truth(ground_truth),
         io.read_anomaly_predictions(predictions),
+        families=_families_from_anomaly_input(eval_input),
     )
 
 

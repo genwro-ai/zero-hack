@@ -70,6 +70,12 @@ def _pred_path(preds_dir: Path, model: str, task: str) -> Path:
     return preds_dir / model / name
 
 
+def _eval_input_path(eval_dir: Path, task: str) -> Path:
+    if task == "anomaly":
+        return eval_dir / "eval_input_anomaly.csv"
+    return eval_dir / "eval_input_valid.csv"
+
+
 def _fmt(value, spec: str) -> str:
     if value is None:
         return "n/a"
@@ -123,7 +129,7 @@ def main() -> None:
                 task,
                 ground_truth=_gt_path(eval_dir, task),
                 predictions=pred,
-                eval_input=eval_dir / "eval_input_valid.csv",
+                eval_input=_eval_input_path(eval_dir, task),
             )
 
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -1,19 +1,3 @@
-"""Task 2 — sequence-completion metrics.
-
-Each example provides a true suffix (the steps *after* the cut point) and a
-predicted suffix. Per ``generation_rules.md`` §5.2 we report:
-
-- **Exact Match Rate** — fraction with prediction identical to truth.
-- **Normalized Edit Distance** — token-level Levenshtein / ``max(len)`` (lower
-  is better). The EDA flags exact-match as a trap on held-out data, so edit
-  distance and block accuracy are the informative signals.
-- **Token Accuracy** — position-wise matches / ``len(truth)``.
-- **Block-level Accuracy** — LCS of the block-run shapes / ``len(truth blocks)``;
-  rewards getting the process *shape* right even when exact steps differ.
-"""
-
-from __future__ import annotations
-
 from zero_hack.eval.blocks import block_runs
 
 
@@ -47,10 +31,11 @@ def lcs_length(a: list[str], b: list[str]) -> int:
 
 
 def _token_accuracy(pred: list[str], gold: list[str]) -> float:
-    if not gold:
-        return 1.0 if not pred else 0.0
+    denom = max(len(pred), len(gold))
+    if denom == 0:
+        return 1.0
     matches = sum(1 for p, g in zip(pred, gold, strict=False) if p == g)
-    return matches / len(gold)
+    return matches / denom
 
 
 def _normalized_edit_distance(pred: list[str], gold: list[str]) -> float:
@@ -61,10 +46,12 @@ def _normalized_edit_distance(pred: list[str], gold: list[str]) -> float:
 
 
 def _block_accuracy(pred: list[str], gold: list[str]) -> float:
+    pred_runs = block_runs(pred)
     gold_runs = block_runs(gold)
-    if not gold_runs:
-        return 1.0 if not pred else 0.0
-    return lcs_length(block_runs(pred), gold_runs) / len(gold_runs)
+    denom = max(len(pred_runs), len(gold_runs))
+    if denom == 0:
+        return 1.0
+    return lcs_length(pred_runs, gold_runs) / denom
 
 
 def score_completion(

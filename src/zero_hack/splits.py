@@ -1,12 +1,3 @@
-"""Deterministic, dedup-aware train/valid/test splitting.
-
-The split is a pure function of sequence content, so:
-- identical sequences always land in the same split (no leakage across boundaries);
-- the assignment is reproducible across machines and runs (no RNG).
-"""
-
-from __future__ import annotations
-
 import hashlib
 
 SPLIT_NAMES = ("train", "valid", "test")

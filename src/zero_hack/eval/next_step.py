@@ -1,13 +1,3 @@
-"""Task 1 — next-step prediction metrics.
-
-Given the true next step and a ranked list of up to 5 predictions per example
-(``RANK_1 .. RANK_5``), report Top-1 / Top-3 / Top-5 accuracy and MRR, per
-``generation_rules.md`` §5.2. Optionally broken down by family.
-"""
-
-from __future__ import annotations
-
-
 def _reciprocal_rank(gold: str, ranked: list[str]) -> float:
     for idx, pred in enumerate(ranked, start=1):
         if pred == gold:

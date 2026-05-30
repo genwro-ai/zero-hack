@@ -4,7 +4,7 @@ import numpy as np
 import xgboost as xgb
 
 from zero_hack.data import SequenceRecord
-from zero_hack.metrics import TopKAccumulator
+from zero_hack.models.topk import TopKAccumulator
 from zero_hack.models.xgboost.features import FeatureExtractor
 
 _SCORE_FLOOR = 1e-9

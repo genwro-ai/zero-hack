@@ -1,22 +1,3 @@
-"""Task 3 — anomaly-detection metrics.
-
-The **positive class is an anomaly** (an invalid sequence, ``IS_VALID = 0``):
-the task is to *detect* process-rule violations. Per ``generation_rules.md``
-§5.2 we report Binary Accuracy, Precision, Recall, F1, the confusion matrix,
-ROC-AUC, and Rule Attribution Accuracy.
-
-``SCORE`` is the probability the sequence is *valid* (per the submission
-format), so the anomaly score used for ROC-AUC is ``1 - SCORE``. AUC is computed
-with the rank (Mann-Whitney) estimator and is ``None`` when scores are absent.
-
-Rule Attribution Accuracy is measured *among detected violations* — examples
-that are truly invalid and were flagged invalid (true positives) — as the
-fraction whose ``PREDICTED_RULE`` matches the ground-truth rule.
-"""
-
-from __future__ import annotations
-
-
 def _roc_auc(scores: list[float], labels: list[int]) -> float | None:
     """AUC for ``score`` predicting ``label==1`` via the rank estimator.
 
@@ -47,6 +28,7 @@ def _roc_auc(scores: list[float], labels: list[int]) -> float | None:
 def score_anomaly(
     truth: dict[str, dict],
     predictions: dict[str, dict],
+    families: dict[str, str] | None = None,
 ) -> dict:
     """Compute anomaly metrics over the shared example ids.
 
@@ -55,6 +37,22 @@ def score_anomaly(
     A missing prediction defaults to "valid" (is_valid=1, the negative class).
     """
     ids = sorted(truth)
+    groups: dict[str, list[str]] = {"all": ids}
+    if families:
+        for example_id in ids:
+            groups.setdefault(families.get(example_id, "unknown"), []).append(example_id)
+
+    return {
+        group: _score_anomaly_ids(group_ids, truth, predictions)
+        for group, group_ids in groups.items()
+    }
+
+
+def _score_anomaly_ids(
+    ids: list[str],
+    truth: dict[str, dict],
+    predictions: dict[str, dict],
+) -> dict:
     tp = fp = tn = fn = 0  # positive class = anomaly (invalid)
     auc_scores: list[float] = []
     auc_labels: list[int] = []

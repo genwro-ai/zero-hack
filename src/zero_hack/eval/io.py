@@ -1,17 +1,3 @@
-"""Readers/writers for the shared eval-protocol CSV formats.
-
-Covers the organizer eval *inputs* (``eval_input_valid.csv``,
-``eval_input_anomaly.csv``), the three *submission* files (Tasks 1-3), and the
-*ground-truth* files used for local self-scoring. Column lookups are
-case-insensitive and accept the common name variants, since the organizer fixes
-submission columns but not ground-truth ones.
-
-Multi-step fields (``PARTIAL_SEQUENCE``, ``SEQUENCE``, ``PREDICTED_SEQUENCE``,
-ground-truth sequences) are pipe-separated, per ``generation_rules.md`` §5.
-"""
-
-from __future__ import annotations
-
 import csv
 from pathlib import Path
 
@@ -43,9 +29,6 @@ def _resolve(row: dict[str, str], *candidates: str) -> str | None:
     return None
 
 
-# --------------------------------------------------------------------------- #
-# Eval inputs                                                                  #
-# --------------------------------------------------------------------------- #
 def read_eval_input_valid(path: str | Path) -> list[dict]:
     """Read Tasks 1/2 input: EXAMPLE_ID, FAMILY, COMPLETION_FRACTION, PARTIAL_SEQUENCE."""
     rows = []
@@ -76,9 +59,6 @@ def read_eval_input_anomaly(path: str | Path) -> list[dict]:
     return rows
 
 
-# --------------------------------------------------------------------------- #
-# Predictions (submission files)                                              #
-# --------------------------------------------------------------------------- #
 def read_next_step_predictions(path: str | Path) -> dict[str, list[str]]:
     """EXAMPLE_ID -> [RANK_1 ... RANK_5] (blanks dropped)."""
     out: dict[str, list[str]] = {}
@@ -118,9 +98,6 @@ def read_anomaly_predictions(path: str | Path) -> dict[str, dict]:
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Ground truth (local self-scoring)                                           #
-# --------------------------------------------------------------------------- #
 def read_next_step_truth(path: str | Path) -> dict[str, str]:
     """EXAMPLE_ID -> true next step."""
     out: dict[str, str] = {}
@@ -154,9 +131,6 @@ def read_anomaly_truth(path: str | Path) -> dict[str, dict]:
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Submission writers                                                          #
-# --------------------------------------------------------------------------- #
 def write_next_step_predictions(path: str | Path, rows: list[dict]) -> None:
     """Rows: {example_id, ranks: list[str]} -> EXAMPLE_ID, RANK_1..RANK_5."""
     path = Path(path)

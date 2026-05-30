@@ -5,7 +5,9 @@ from pathlib import Path
 from zero_hack.data.datasets import (
     FAMILY_FILE_NAMES,
     dedupe_records,
+    load_industrial_family_records,
     load_raw_family_records,
+    namespace_sequence_ids,
     split_records,
     write_sequence_records,
 )
@@ -29,6 +31,11 @@ def parse_args() -> argparse.Namespace:
         help="Split output directory. Defaults to data/generated/<dataset>/splits.",
     )
     parser.add_argument(
+        "--industrial-dir",
+        default="data/industrial",
+        help="Directory containing the provided Industrial track variant CSVs.",
+    )
+    parser.add_argument(
         "--families",
         nargs="+",
         default=["mosfet", "igbt", "ic"],
@@ -38,6 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-ratio", type=float, default=0.8)
     parser.add_argument("--valid-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=1729)
+    parser.add_argument(
+        "--no-include-industrial",
+        action="store_true",
+        help="Use only generated raw CSVs, without the provided industrial variants.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -71,7 +83,18 @@ def main() -> None:
 
     combined_splits = {"train": [], "valid": [], "test": []}
     for family in args.families:
-        records = load_raw_family_records(input_dir, family)
+        generated = namespace_sequence_ids(
+            load_raw_family_records(input_dir, family),
+            "generated",
+        )
+        industrial = []
+        if not args.no_include_industrial:
+            industrial = namespace_sequence_ids(
+                load_industrial_family_records(args.industrial_dir, family),
+                "industrial",
+            )
+
+        records = industrial + generated
         deduped = dedupe_records(records)
         splits = split_records(
             deduped,
@@ -80,10 +103,12 @@ def main() -> None:
             seed=args.seed,
         )
 
-        raw_count = len(records)
-        duplicate_count = raw_count - len(deduped)
+        raw_count = len(generated)
+        industrial_count = len(industrial)
+        duplicate_count = len(records) - len(deduped)
         print(
-            f"{family}: raw={raw_count} deduped={len(deduped)} "
+            f"{family}: generated={raw_count} industrial={industrial_count} "
+            f"deduped={len(deduped)} "
             f"duplicates={duplicate_count} "
             f"train={len(splits['train'])} valid={len(splits['valid'])} "
             f"test={len(splits['test'])}"
