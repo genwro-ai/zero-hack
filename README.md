@@ -105,23 +105,40 @@ tasks, with no external dependencies. It reuses the canonical 10-rule
 | 2 — Completion | Exact match, normalized edit distance, token accuracy, block-level accuracy |
 | 3 — Anomaly | Accuracy, precision/recall/F1, confusion matrix, ROC-AUC, rule-attribution accuracy |
 
-Three scripts make the pipeline runnable end-to-end. Until the organizers
-distribute the real eval files, `make_eval_set.py` synthesises an equivalent
-held-out eval set (Tasks 1 & 2 from prefix cuts; Task 3 from validator-flagged
-perturbations) so metrics and the baseline-vs-trained comparison run today:
+The local and Slurm helper scripts run the same Python entry points for the
+three data stages:
 
 ```bash
-# 1. Build eval inputs + ground truth from the held-out test split
-uv run python scripts/make_eval_set.py
+# Local
+local_scripts/generate_valid_datasets.sh
+local_scripts/create_all_dataset_splits.sh --force
+local_scripts/make_eval_sets.sh
 
-# 2. Produce the three submission files from a baseline
-uv run python scripts/baseline_predict.py --model ngram
+# Slurm
+sbatch slurm/generate_valid_datasets.sbatch
+sbatch slurm/create_dataset_splits.sbatch
+sbatch slurm/make_eval_sets.sbatch
+```
 
-# 3. Score a submission against ground truth (mirrors the organizer CLI)
+Until the organizers distribute the real eval files, `make_eval_set.py`
+synthesises local held-out eval sets under
+`data/eval/<dataset>/holdout_<family>/{id,ood}/` using prefix cuts for Tasks 1
+& 2 and validator-flagged perturbations for Task 3:
+
+```bash
+# Build all dataset-size x holdout-family eval sets
+uv run python scripts/make_all_eval_sets.py
+
+# Produce the three submission files from a baseline
+uv run python scripts/baseline_predict.py \
+  --model ngram \
+  --eval-dir data/eval/valid_s005k/holdout_ic/ood
+
+# Score a submission against ground truth (mirrors the organizer CLI)
 uv run python scripts/eval_metrics.py --task next_step \
-  --ground-truth outputs/eval/nextstep_truth.csv \
+  --ground-truth data/eval/valid_s005k/holdout_ic/ood/nextstep_truth.csv \
   --predictions  outputs/preds/ngram/nextstep.csv \
-  --eval-input   outputs/eval/eval_input_valid.csv
+  --eval-input   data/eval/valid_s005k/holdout_ic/ood/eval_input_valid.csv
 ```
 
 `scripts/eval_metrics.py` mirrors the organizer `eval_metrics.py` interface
