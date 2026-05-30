@@ -218,10 +218,11 @@ def _write_eval_set_next_step(
     metrics_root: Path,
     device: torch.device,
     k: int,
+    eval_views: tuple[str, ...],
 ) -> dict[str, dict[str, Any]]:
     results: dict[str, dict[str, Any]] = {}
     invalid_ids = _invalid_prediction_ids(bundle.vocabulary)
-    for view in ("id", "ood"):
+    for view in eval_views:
         eval_dir = eval_root / dataset / f"holdout_{holdout_family}" / view
         if not eval_dir.exists():
             print(f"skip eval-set {view}: missing {eval_dir}")
@@ -291,6 +292,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-eval-batches", type=int, default=None)
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
+    parser.add_argument(
+        "--eval-views",
+        nargs="+",
+        default=None,
+        help="Eval views. Defaults to standard/diverse views when present, else id/ood.",
+    )
 
     parser.add_argument("--d-model", type=int, default=128)
     parser.add_argument("--nhead", type=int, default=4)
@@ -447,11 +454,23 @@ def main() -> None:
         metrics_root=Path(args.metrics_root),
         device=device,
         k=args.k,
+        eval_views=tuple(
+            args.eval_views
+            or _default_eval_views(Path(args.eval_root), args.dataset, args.holdout_family)
+        ),
     )
     (run_dir / "eval_set_next_step.json").write_text(
         json.dumps(eval_set_results, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _default_eval_views(eval_root: Path, dataset: str, holdout_family: str) -> list[str]:
+    base = eval_root / dataset / f"holdout_{holdout_family}"
+    mixed_views = ["standard/id", "standard/ood", "diverse/id", "diverse/ood"]
+    if all((base / view).exists() for view in mixed_views):
+        return mixed_views
+    return ["id", "ood"]
 
 
 if __name__ == "__main__":

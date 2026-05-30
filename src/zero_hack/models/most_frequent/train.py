@@ -1,6 +1,6 @@
 import argparse
 
-from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records
+from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records, split_role
 from zero_hack.models.most_frequent.model import MostFrequentModel
 
 
@@ -26,9 +26,7 @@ def main() -> None:
 
     for split in bundle.test_split_names:
         summary = model.evaluate(bundle.records[split], bundle.vocabulary, k=args.k)
-        label = split.removeprefix("test_")
-        role = "ood" if label == bundle.holdout_family else "id"
-        print(f"{split} ({role}) summary: {summary}")
+        print(f"{split} ({split_role(split, bundle)}) summary: {summary}")
 
 
 if __name__ == "__main__":

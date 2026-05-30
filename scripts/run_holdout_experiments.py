@@ -165,7 +165,13 @@ def _parse_args() -> argparse.Namespace:
         choices=CLASSIC_BASELINES,
         default=["most_frequent", "ngram"],
     )
-    parser.add_argument("--views", nargs="+", choices=_VIEWS, default=["id", "ood"])
+    parser.add_argument(
+        "--views",
+        nargs="+",
+        choices=_VIEWS,
+        default=None,
+        help="Eval views. Defaults to standard/diverse views when present, else id/ood.",
+    )
     parser.add_argument("--tasks", nargs="+", choices=TASKS, default=list(TASKS))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument(
@@ -249,6 +255,7 @@ def main() -> None:
             raise SystemExit(f"Missing splits directory: {splits_dir}")
 
         for holdout_family in args.holdout_families:
+            views = args.views or _default_views(eval_root, dataset, holdout_family)
             bundle = load_split_records(
                 splits_dir,
                 holdout_family=holdout_family,
@@ -285,7 +292,7 @@ def main() -> None:
                         f"P={tuning['val_precision']:.4f} R={tuning['val_recall']:.4f})"
                     )
 
-                for view in args.views:
+                for view in views:
                     eval_dir = eval_root / dataset / f"holdout_{holdout_family}" / view
                     if not eval_dir.exists():
                         raise SystemExit(
@@ -321,6 +328,14 @@ def main() -> None:
                         task: metrics.get("all", metrics) for task, metrics in results.items()
                     }
                     print(json.dumps(compact, indent=2))
+
+
+def _default_views(eval_root: Path, dataset: str, holdout_family: str) -> list[str]:
+    base = eval_root / dataset / f"holdout_{holdout_family}"
+    mixed_views = ["standard/id", "standard/ood", "diverse/id", "diverse/ood"]
+    if all((base / view).exists() for view in mixed_views):
+        return mixed_views
+    return ["id", "ood"]
 
 
 if __name__ == "__main__":

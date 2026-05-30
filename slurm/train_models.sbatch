@@ -30,7 +30,8 @@ set -euo pipefail
 #   sbatch --array=1 slurm/train_models.sbatch
 #
 # Optional environment overrides:
-#   DATASET=valid_s005k          # which generated dataset to train on
+#   DATASET=mixed_s100k_v40_a60  # which generated dataset to train on
+#   HOLDOUT_FAMILY=ic
 #   OUTPUT_ROOT=data/generated   # where the dataset raw/ dirs live
 #   MODEL_ROOT=outputs/models    # where checkpoints are written
 #   EPOCHS=10
@@ -62,7 +63,8 @@ MODELS=(lstm transformer)
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 MODEL="${MODELS[$TASK_ID]}"
 
-DATASET="${DATASET:-valid_s005k}"
+DATASET="${DATASET:-mixed_s100k_v40_a60}"
+HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 MODEL_ROOT="${MODEL_ROOT:-outputs/models}"
 EPOCHS="${EPOCHS:-10}"
@@ -86,6 +88,7 @@ ARGS=(
   --lr "$LR"
   --max-context "$MAX_CONTEXT"
   --k "$K"
+  --holdout-family "$HOLDOUT_FAMILY"
 )
 
 if [[ -n "${LIMIT_PER_FAMILY:-}" ]]; then
@@ -97,8 +100,8 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
   ARGS+=($EXTRA_ARGS)
 fi
 
-printf "task_id=%s model=%s dataset=%s splits=%s out=%s epochs=%s\n" \
-  "$TASK_ID" "$MODEL" "$DATASET" "$SPLITS_DIR" "$OUT_DIR" "$EPOCHS"
+printf "task_id=%s model=%s dataset=%s holdout=%s splits=%s out=%s epochs=%s\n" \
+  "$TASK_ID" "$MODEL" "$DATASET" "$HOLDOUT_FAMILY" "$SPLITS_DIR" "$OUT_DIR" "$EPOCHS"
 
 time "$RUNNER" uv run python -m "zero_hack.models.${MODEL}.train" "${ARGS[@]}"
 
