@@ -34,3 +34,25 @@ def first_violated_rule(steps: list[str]) -> str | None:
         return None
     earliest = min(violations, key=lambda v: v.step_index)
     return earliest.rule
+
+
+@lru_cache(maxsize=1)
+def trigger_steps() -> frozenset[str]:
+    """Steps that can *ever* trigger a process-logic rule.
+
+    A next-step that is not one of these can never introduce a violation, so a
+    masking layer only has to test these candidates. Sourced directly from the
+    rule sets in ``generate_sequences.py`` (plus the ``ALIGN MASK LEVEL N``
+    family, matched by prefix) so nothing about the rules is duplicated.
+    """
+    m = _generator_module()
+    return frozenset(
+        m.DEPOSITION_STEPS
+        | m.ETCH_STEPS
+        | m.IMPLANT_STEPS
+        | m.CMP_STEPS
+        | m.PAD_WINDOW_STEPS
+        | m.ELECTRICAL_TEST_STEPS
+        | m.BACKSIDE_METAL_STEPS
+        | {"SHIP LOT"}
+    )
