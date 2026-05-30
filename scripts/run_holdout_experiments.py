@@ -221,7 +221,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-seed", type=int, default=1729)
     parser.add_argument("--n", type=int, default=5)
     parser.add_argument("--alpha", type=float, default=0.4)
-    parser.add_argument("--bucket", type=int, default=5)
     parser.add_argument("--seed", type=int, default=1729)
     return parser.parse_args()
 
