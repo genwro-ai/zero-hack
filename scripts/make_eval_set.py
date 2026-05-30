@@ -11,7 +11,7 @@ from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
 from zero_hack.data import FAMILY_FILE_NAMES, load_sequence_records
-from zero_hack.eval.anomaly_synth import corrupt_steps
+from zero_hack.eval.anomaly_synth import build_rule_stratified_corruptions
 from zero_hack.eval.io import join_steps
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, FAMILIES, load_split_records
 
@@ -127,6 +127,7 @@ def main() -> None:
     completion_truth: list[list] = []
     anomaly_rows: list[list] = []
     anomaly_truth: list[list] = []
+    anomaly_rule_counts: dict[str, int] = {}
 
     for family, recs in sorted(by_family.items()):
         for rec in recs[: args.n_valid]:
@@ -140,25 +141,22 @@ def main() -> None:
                 completion_truth.append([example_id, join_steps(steps[cut:])])
 
     for family, recs in sorted(by_family.items()):
-        kept_valid = kept_invalid = 0
-        for rec in recs:
-            if kept_valid >= args.n_anomaly_valid and kept_invalid >= args.n_anomaly_invalid:
-                break
+        invalid_examples = build_rule_stratified_corruptions(
+            recs,
+            n_invalid=args.n_anomaly_invalid,
+            rng=rng,
+        )
+        for bad_idx, example in enumerate(invalid_examples):
+            example_id = f"{family}_{example.sequence_id}_bad_{bad_idx:04d}_{example.rule}"
+            anomaly_rows.append([example_id, family, join_steps(example.steps)])
+            anomaly_truth.append([example_id, 0, example.rule])
+            anomaly_rule_counts[example.rule] = anomaly_rule_counts.get(example.rule, 0) + 1
+
+        for rec in recs[: args.n_anomaly_valid]:
             steps = list(rec.steps)
-            if kept_invalid < args.n_anomaly_invalid:
-                corrupted = corrupt_steps(steps, rng)
-                if corrupted is None:
-                    continue
-                seq, rule = corrupted
-                example_id = f"{family}_{rec.sequence_id}_bad"
-                anomaly_rows.append([example_id, family, join_steps(seq)])
-                anomaly_truth.append([example_id, 0, rule])
-                kept_invalid += 1
-            elif kept_valid < args.n_anomaly_valid:
-                example_id = f"{family}_{rec.sequence_id}_ok"
-                anomaly_rows.append([example_id, family, join_steps(steps)])
-                anomaly_truth.append([example_id, 1, ""])
-                kept_valid += 1
+            example_id = f"{family}_{rec.sequence_id}_ok"
+            anomaly_rows.append([example_id, family, join_steps(steps)])
+            anomaly_truth.append([example_id, 1, ""])
 
     order = list(range(len(anomaly_rows)))
     rng.shuffle(order)
@@ -187,6 +185,7 @@ def main() -> None:
                 "completion_fractions": args.fractions,
                 "n_anomaly_valid_per_family": args.n_anomaly_valid,
                 "n_anomaly_invalid_per_family": args.n_anomaly_invalid,
+                "anomaly_rule_counts": anomaly_rule_counts,
                 "seed": args.seed,
             },
             indent=2,
