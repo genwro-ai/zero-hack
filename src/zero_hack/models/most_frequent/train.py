@@ -1,7 +1,3 @@
-"""CLI to fit and evaluate the most-frequent next-step baseline."""
-
-from __future__ import annotations
-
 import argparse
 
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records

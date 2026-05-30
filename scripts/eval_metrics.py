@@ -9,13 +9,14 @@ the two are interchangeable for self-evaluation.
 Examples
 --------
     uv run python scripts/eval_metrics.py --task next_step \\
-        --ground-truth outputs/eval/nextstep_truth.csv \\
-        --predictions  outputs/preds/nextstep.csv \\
-        --eval-input   outputs/eval/eval_input_valid.csv
+        --ground-truth data/eval/valid_s005k/holdout_ic/ood/nextstep_truth.csv \\
+        --predictions  outputs/preds/valid_s005k/holdout_ic/ood/ngram/nextstep.csv \\
+        --eval-input   data/eval/valid_s005k/holdout_ic/ood/eval_input_valid.csv
 
     uv run python scripts/eval_metrics.py --task anomaly \\
-        --ground-truth outputs/eval/anomaly_truth.csv \\
-        --predictions  outputs/preds/anomaly.csv
+        --ground-truth data/eval/valid_s005k/holdout_ic/ood/anomaly_truth.csv \\
+        --predictions  outputs/preds/valid_s005k/holdout_ic/ood/ngram/anomaly.csv \\
+        --eval-input   data/eval/valid_s005k/holdout_ic/ood/eval_input_anomaly.csv
 """
 
 from __future__ import annotations
