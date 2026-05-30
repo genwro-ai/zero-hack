@@ -53,6 +53,7 @@ def test_corrupt_can_target_each_rule():
         assert corrupted is not None, rule
         steps, observed_rule = corrupted
         assert observed_rule == rule
+        assert not is_valid(steps)
         assert first_violated_rule(steps) == rule
 
 
@@ -66,6 +67,7 @@ def test_rule_stratified_corruptions_balance_all_rules():
     counts = {rule: 0 for rule in RULE_IDS}
     for example in examples:
         counts[example.rule] += 1
+        assert not is_valid(example.steps)
         assert first_violated_rule(example.steps) == example.rule
 
     assert len(examples) == len(RULE_IDS) * 2
