@@ -68,6 +68,12 @@ def test_infer_process_state_is_family_agnostic() -> None:
     assert state.litho_stage == "soft_bake"
 
 
+def test_infer_process_state_uses_canonical_phase_labels() -> None:
+    state = infer_process_state(["PRE CLEAN WAFER", "DEPOSIT PASSIVATION", "CURE PASSIVATION"])
+
+    assert state.phase == "PASSIVATION_BLOCK"
+
+
 def test_topk_steps_skips_all_masked_tokens() -> None:
     vocab = _vocab(["RCA CLEAN 1"])
     logits = torch.full((len(vocab.id_to_token),), -torch.inf)

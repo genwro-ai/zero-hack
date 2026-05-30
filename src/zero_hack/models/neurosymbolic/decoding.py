@@ -10,27 +10,14 @@ from typing import Literal
 import torch
 
 from zero_hack.data import FAMILY_TOKENS, SPECIAL_TOKENS, Vocabulary
+from zero_hack.eval.phases import PHASES, UNKNOWN_PHASE, step_candidate_phases, steps_to_phases
 from zero_hack.eval.validator import _generator_module, validate_sequence
 
 HeadMode = Literal["none", "hard", "shaped"]
 
 _ALIGN_LEVEL = re.compile(r"^ALIGN MASK LEVEL (\d+)$")
 _SPECIAL_OUTPUT_TOKENS = frozenset(SPECIAL_TOKENS) | frozenset(FAMILY_TOKENS.values())
-
-_PHASE_ORDER = (
-    "start",
-    "initial_measure",
-    "clean_prep",
-    "frontside",
-    "via",
-    "metal",
-    "passivation",
-    "backside",
-    "final_inspection",
-    "test",
-    "ship",
-)
-_PHASE_INDEX = {phase: idx for idx, phase in enumerate(_PHASE_ORDER)}
+_PHASE_INDEX = {phase: idx for idx, phase in enumerate(PHASES)}
 
 
 @dataclass(frozen=True)
@@ -46,6 +33,7 @@ class ProcessShapingWeights:
 
 @dataclass(frozen=True)
 class ProcessState:
+    prefix: tuple[str, ...]
     phase: str
     phase_index: int
     litho_stage: str | None
@@ -122,7 +110,9 @@ def shape_logits(
 
 
 def infer_process_state(prefix: list[str] | tuple[str, ...]) -> ProcessState:
-    phase = "start"
+    prefix_tuple = tuple(prefix)
+    phase_labels = steps_to_phases(prefix_tuple) if prefix_tuple else []
+    phase = phase_labels[-1] if phase_labels else "PREFIX"
     litho_stage: str | None = None
     current_litho_level = 0
     resist_on = False
@@ -136,9 +126,9 @@ def infer_process_state(prefix: list[str] | tuple[str, ...]) -> ProcessState:
     terminal_started = False
     last_step = None
 
-    for step in prefix:
+    for idx, step in enumerate(prefix_tuple):
         last_step = step
-        phase = _advance_phase(phase, _phase_for_step(step))
+        step_phase = phase_labels[idx]
         category = _category_for_step(step)
 
         align_match = _ALIGN_LEVEL.match(step)
@@ -197,10 +187,11 @@ def infer_process_state(prefix: list[str] | tuple[str, ...]) -> ProcessState:
 
         if step == "WAFER SORT TEST":
             wafer_sorted = True
-        if _phase_for_step(step) in {"final_inspection", "test", "ship"}:
+        if _PHASE_INDEX.get(step_phase, -1) >= _PHASE_INDEX["FINAL_INSPECTION"]:
             terminal_started = True
 
     return ProcessState(
+        prefix=prefix_tuple,
         phase=phase,
         phase_index=_PHASE_INDEX[phase],
         litho_stage=litho_stage,
@@ -250,11 +241,11 @@ def _obligation_score(step: str, state: ProcessState) -> float:
 
 
 def _phase_score(step: str, state: ProcessState) -> float:
-    candidate_phase = _phase_for_step(step)
-    candidate_index = _PHASE_INDEX[candidate_phase]
-    if candidate_phase == "start":
+    candidate_phase = _candidate_phase_for_next_step(state.prefix, step)
+    candidate_index = _PHASE_INDEX.get(candidate_phase)
+    if candidate_index is None:
         return 0.0
-    if state.terminal_started and candidate_index < _PHASE_INDEX["final_inspection"]:
+    if state.terminal_started and candidate_index < _PHASE_INDEX["FINAL_INSPECTION"]:
         return -2.0
     if candidate_index in {state.phase_index, state.phase_index + 1}:
         return 0.4
@@ -263,6 +254,14 @@ def _phase_score(step: str, state: ProcessState) -> float:
     if candidate_index < state.phase_index - 2:
         return -0.5
     return 0.0
+
+
+def _candidate_phase_for_next_step(prefix: tuple[str, ...], step: str) -> str:
+    contextual = steps_to_phases([*prefix, step])[-1]
+    if contextual != UNKNOWN_PHASE:
+        return contextual
+    candidates = step_candidate_phases(step)
+    return candidates[0] if candidates != (UNKNOWN_PHASE,) else UNKNOWN_PHASE
 
 
 def _block_stack_score(step: str, state: ProcessState) -> float:
@@ -385,51 +384,6 @@ def _category_for_step(step: str) -> str:
     if step in {"SHIP LOT", "LOT RELEASE", "FINAL LOT RELEASE", "PACKAGE PREPARATION"}:
         return "ship"
     return "other"
-
-
-def _phase_for_step(step: str) -> str:
-    category = _category_for_step(step)
-    if step in {"RECEIVE WAFER LOT", "LOT IDENTIFICATION"}:
-        return "start"
-    if step.startswith("INITIAL ") or step.startswith("MEASURE INITIAL"):
-        return "initial_measure"
-    if category == "backside":
-        return "backside"
-    if category == "final_inspection" or step.startswith("FINAL "):
-        return "final_inspection"
-    if category == "test":
-        return "test"
-    if step in {"SHIP LOT", "LOT RELEASE", "FINAL LOT RELEASE", "PACKAGE PREPARATION"}:
-        return "ship"
-    if "PASSIVATION" in step or "PAD WINDOW" in step:
-        return "passivation"
-    if _is_via_step(step):
-        return "via"
-    if "METAL" in step and "BACKSIDE" not in step:
-        return "metal"
-    if category == "clean" and step not in {"CLEAN AFTER ETCH", "CLEAN PAD OPENING"}:
-        return "clean_prep"
-    if category in {
-        "deposition",
-        "etch",
-        "implant",
-        "anneal",
-        "cmp",
-        "litho_start",
-        "litho_align",
-        "litho_expose",
-        "litho_develop",
-        "litho_inspect",
-        "strip",
-        "measure",
-        "other",
-    }:
-        return "frontside"
-    return "start"
-
-
-def _advance_phase(current: str, candidate: str) -> str:
-    return candidate if _PHASE_INDEX[candidate] > _PHASE_INDEX[current] else current
 
 
 def _is_via_step(step: str) -> bool:
