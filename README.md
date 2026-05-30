@@ -73,9 +73,9 @@ Symbolic next-step baselines live under `src/zero_hack/models/`. They read the
 train/valid/test CSVs produced by `scripts/create_dataset_splits.py`, so every
 model is compared on the same split artifacts.
 
-- **Most frequent** (`models/most_frequent/`): counting baseline conditioned on
-  `(family, position bucket, previous step)` with stupid-backoff to coarser
-  contexts. The sanity-check lower bound.
+- **Most frequent** (`models/most_frequent/`): position-frequency baseline
+  conditioned on `(family, position bucket)`, with fallback to family/global
+  frequencies. The sanity-check lower bound.
 - **N-gram** (`models/ngram/`): family-conditioned counting model (default
   5-gram) with stupid-backoff to shorter contexts. The main symbolic baseline.
 

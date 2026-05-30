@@ -7,45 +7,37 @@ from dataclasses import dataclass, field
 from zero_hack.data import SequenceRecord
 from zero_hack.models.topk import TopKAccumulator
 
-BOS_TOKEN = "<BOS>"
 SCORE_FLOOR = 1e-9
 
 
 @dataclass
 class FamilyCounts:
-    by_position_and_previous: dict[tuple[int, str], Counter[str]] = field(
-        default_factory=lambda: defaultdict(Counter)
-    )
-    by_previous: dict[str, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
     by_position: dict[int, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
     unigram: Counter[str] = field(default_factory=Counter)
 
 
 class MostFrequentModel:
-    def __init__(self, position_bucket_size: int = 5, backoff_alpha: float = 0.4) -> None:
+    def __init__(self, position_bucket_size: int = 5) -> None:
         if position_bucket_size < 1:
             raise ValueError("position_bucket_size must be >= 1")
         self.position_bucket_size = position_bucket_size
-        self.backoff_alpha = backoff_alpha
         self.by_family: dict[str, FamilyCounts] = {}
+        self.global_by_position: dict[int, Counter[str]] = defaultdict(Counter)
         self.global_unigram: Counter[str] = Counter()
 
     def fit(self, records: list[SequenceRecord]) -> MostFrequentModel:
         self.by_family = {}
+        self.global_by_position = defaultdict(Counter)
         self.global_unigram = Counter()
 
         for record in records:
             family_counts = self.by_family.setdefault(record.family, FamilyCounts())
             for position, next_step in enumerate(record.steps):
-                previous_step = record.steps[position - 1] if position else BOS_TOKEN
                 position_bucket = self._bucket(position)
 
-                family_counts.by_position_and_previous[(position_bucket, previous_step)][
-                    next_step
-                ] += 1
-                family_counts.by_previous[previous_step][next_step] += 1
                 family_counts.by_position[position_bucket][next_step] += 1
                 family_counts.unigram[next_step] += 1
+                self.global_by_position[position_bucket][next_step] += 1
                 self.global_unigram[next_step] += 1
         return self
 
@@ -90,29 +82,27 @@ class MostFrequentModel:
         family: str,
         prefix_steps: list[str] | tuple[str, ...],
     ) -> dict[str, float]:
-        previous_step = prefix_steps[-1] if prefix_steps else BOS_TOKEN
         position_bucket = self._bucket(len(prefix_steps))
         family_counts = self.by_family.get(family)
 
         if family_counts is not None:
-            counters = [
-                family_counts.by_position_and_previous.get((position_bucket, previous_step)),
-                family_counts.by_previous.get(previous_step),
-                family_counts.by_position.get(position_bucket),
-                family_counts.unigram,
-            ]
-            for backoff_level, counter in enumerate(counters):
-                if counter:
-                    return _normalised(counter, weight=self.backoff_alpha**backoff_level)
+            counter = family_counts.by_position.get(position_bucket)
+            if counter:
+                return _normalised(counter)
+            if family_counts.unigram:
+                return _normalised(family_counts.unigram)
 
+        counter = self.global_by_position.get(position_bucket)
+        if counter:
+            return _normalised(counter)
         if self.global_unigram:
-            return _normalised(self.global_unigram, weight=self.backoff_alpha**4)
+            return _normalised(self.global_unigram)
         return {}
 
     def _bucket(self, position: int) -> int:
         return position // self.position_bucket_size
 
 
-def _normalised(counter: Counter[str], weight: float) -> dict[str, float]:
+def _normalised(counter: Counter[str]) -> dict[str, float]:
     total = sum(counter.values())
-    return {step: weight * count / total for step, count in counter.items()}
+    return {step: count / total for step, count in counter.items()}

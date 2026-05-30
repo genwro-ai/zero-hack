@@ -15,7 +15,6 @@ def main() -> None:
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
     parser.add_argument("--position-bucket-size", type=int, default=5)
     parser.add_argument("--k", type=int, default=3)
-    parser.add_argument("--alpha", type=float, default=0.4)
     args = parser.parse_args()
 
     bundle = load_split_records(
@@ -27,7 +26,6 @@ def main() -> None:
 
     model = MostFrequentModel(
         position_bucket_size=args.position_bucket_size,
-        backoff_alpha=args.alpha,
     ).fit(bundle.records["train"])
 
     for split in bundle.test_split_names:
