@@ -95,6 +95,32 @@ Use `--splits-dir data/generated/valid_s100k/splits` to select a dataset size,
 `--holdout-family ic` for the two-families-train / third-family-test setup, and
 `--limit-per-family N` for a fast smoke run.
 
+## GFlowNet
+
+The GFlowNet model under `src/zero_hack/models/gflownet/` is a GPU-trained
+prefix-conditioned sequence generator, separate from the classical baselines.
+It can start from an existing process trajectory and sample a valid continuation.
+Its reward is non-differentiable and combines the official 10-rule validator,
+terminal/length gates, family-specific process checks, phase-order milestones,
+style likelihood, and a small anti-memorization term.
+
+With `--holdout-family`, training uses the other two families and writes
+Task 1/2/3 predictions and metrics for the available ID/OOD eval views under
+`outputs/preds/<dataset>/holdout_<family>/<view>/gflownet/` and
+`outputs/metrics/<dataset>/holdout_<family>/<view>/gflownet/`.
+
+```bash
+uv run python -m zero_hack.models.gflownet.train \
+  --dataset valid_s010k \
+  --holdout-family ic \
+  --limit-per-family 5000 \
+  --epochs 200 \
+  --tasks next_step completion anomaly \
+  --device cuda
+
+sbatch slurm/train_gflownet.sbatch
+```
+
 ## Evaluation
 
 `zero_hack.eval` implements the shared eval protocol
