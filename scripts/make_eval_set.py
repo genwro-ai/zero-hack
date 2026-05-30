@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
-from zero_hack.eval.anomaly_synth import corrupt_steps
+from zero_hack.eval.anomaly_synth import build_rule_stratified_corruptions
 from zero_hack.eval.io import join_steps
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, FAMILIES, load_split_records
 
@@ -21,6 +21,14 @@ def _write(path: Path, header: list[str], rows: list[list]) -> None:
         writer = csv.writer(handle)
         writer.writerow(header)
         writer.writerows(rows)
+
+
+def _split_anomaly_record_pools(records: list, n_valid: int) -> tuple[list, list]:
+    valid_records = records[:n_valid]
+    invalid_records = records[n_valid:]
+    if not invalid_records:
+        invalid_records = records
+    return valid_records, invalid_records
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,6 +95,9 @@ def main() -> None:
     completion_truth: list[list] = []
     anomaly_rows: list[list] = []
     anomaly_truth: list[list] = []
+    anomaly_rule_counts: dict[str, int] = {}
+    anomaly_invalid_counts_by_family: dict[str, int] = {}
+    anomaly_missing_invalid_by_family: dict[str, int] = {}
 
     for family, recs in sorted(by_family.items()):
         for rec in recs[: args.n_valid]:
@@ -100,25 +111,30 @@ def main() -> None:
                 completion_truth.append([example_id, join_steps(steps[cut:])])
 
     for family, recs in sorted(by_family.items()):
-        kept_valid = kept_invalid = 0
-        for rec in recs:
-            if kept_valid >= args.n_anomaly_valid and kept_invalid >= args.n_anomaly_invalid:
-                break
+        valid_source_records, invalid_source_records = _split_anomaly_record_pools(
+            recs,
+            args.n_anomaly_valid,
+        )
+        invalid_examples = build_rule_stratified_corruptions(
+            invalid_source_records,
+            n_invalid=args.n_anomaly_invalid,
+            rng=rng,
+        )
+        anomaly_invalid_counts_by_family[family] = len(invalid_examples)
+        missing_invalid = args.n_anomaly_invalid - len(invalid_examples)
+        if missing_invalid:
+            anomaly_missing_invalid_by_family[family] = missing_invalid
+        for bad_idx, example in enumerate(invalid_examples):
+            example_id = f"{family}_{example.sequence_id}_bad_{bad_idx:04d}_{example.rule}"
+            anomaly_rows.append([example_id, family, join_steps(example.steps)])
+            anomaly_truth.append([example_id, 0, example.rule])
+            anomaly_rule_counts[example.rule] = anomaly_rule_counts.get(example.rule, 0) + 1
+
+        for rec in valid_source_records:
             steps = list(rec.steps)
-            if kept_invalid < args.n_anomaly_invalid:
-                corrupted = corrupt_steps(steps, rng)
-                if corrupted is None:
-                    continue
-                seq, rule = corrupted
-                example_id = f"{family}_{rec.sequence_id}_bad"
-                anomaly_rows.append([example_id, family, join_steps(seq)])
-                anomaly_truth.append([example_id, 0, rule])
-                kept_invalid += 1
-            elif kept_valid < args.n_anomaly_valid:
-                example_id = f"{family}_{rec.sequence_id}_ok"
-                anomaly_rows.append([example_id, family, join_steps(steps)])
-                anomaly_truth.append([example_id, 1, ""])
-                kept_valid += 1
+            example_id = f"{family}_{rec.sequence_id}_ok"
+            anomaly_rows.append([example_id, family, join_steps(steps)])
+            anomaly_truth.append([example_id, 1, ""])
 
     order = list(range(len(anomaly_rows)))
     rng.shuffle(order)
@@ -147,6 +163,9 @@ def main() -> None:
                 "completion_fractions": args.fractions,
                 "n_anomaly_valid_per_family": args.n_anomaly_valid,
                 "n_anomaly_invalid_per_family": args.n_anomaly_invalid,
+                "anomaly_invalid_counts_by_family": anomaly_invalid_counts_by_family,
+                "anomaly_missing_invalid_by_family": anomaly_missing_invalid_by_family,
+                "anomaly_rule_counts": anomaly_rule_counts,
                 "seed": args.seed,
             },
             indent=2,
