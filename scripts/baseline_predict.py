@@ -10,7 +10,8 @@ from pathlib import Path
 from zero_hack import PROJECT_ROOT
 from zero_hack.eval import io
 from zero_hack.eval.validator import first_violated_rule, validate_sequence
-from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records
+from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records, pick_device
+from zero_hack.models.decoder.model import load_predictor
 from zero_hack.models.most_frequent import MostFrequentModel
 from zero_hack.models.ngram import NGramModel
 from zero_hack.models.xgboost import XGBoostNextStep
@@ -75,7 +76,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--model", default="ngram", choices=("ngram", "most_frequent", "xgboost"))
+    parser.add_argument(
+        "--model", default="ngram", choices=("ngram", "most_frequent", "xgboost", "decoder")
+    )
+    parser.add_argument("--checkpoint", default=None, help="Trained decoder checkpoint path.")
     parser.add_argument("--splits-dir", default=str(DEFAULT_SPLITS_DIR))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)
@@ -109,19 +113,24 @@ def main() -> None:
         limit_per_family=args.limit_per_family,
     )
     print(f"counts: {bundle.counts()}")
-    model = build_model(
-        args.model,
-        bundle.records["train"],
-        n=args.n,
-        alpha=args.alpha,
-        bucket=args.bucket,
-        xgb_kwargs={
-            "n_estimators": args.xgb_estimators,
-            "max_depth": args.xgb_depth,
-            "learning_rate": args.xgb_lr,
-            "lag": args.xgb_lag,
-        },
-    )
+    if args.model == "decoder":
+        if not args.checkpoint:
+            raise SystemExit("--model decoder requires --checkpoint")
+        model = load_predictor(args.checkpoint, pick_device(None))
+    else:
+        model = build_model(
+            args.model,
+            bundle.records["train"],
+            n=args.n,
+            alpha=args.alpha,
+            bucket=args.bucket,
+            xgb_kwargs={
+                "n_estimators": args.xgb_estimators,
+                "max_depth": args.xgb_depth,
+                "learning_rate": args.xgb_lr,
+                "lag": args.xgb_lag,
+            },
+        )
 
     if "next_step" in args.tasks or "completion" in args.tasks:
         valid_inputs = io.read_eval_input_valid(eval_dir / "eval_input_valid.csv")
