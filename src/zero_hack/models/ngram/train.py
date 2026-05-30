@@ -1,7 +1,3 @@
-"""CLI to fit and evaluate the symbolic n-gram next-step baseline."""
-
-from __future__ import annotations
-
 import argparse
 
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, load_split_records
@@ -9,7 +5,7 @@ from zero_hack.models.ngram.model import NGramModel
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Symbolic n-gram next-step baseline.")
+    parser = argparse.ArgumentParser(description="Classic n-gram next-step baseline.")
     parser.add_argument("--splits-dir", default=str(DEFAULT_SPLITS_DIR))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default=None)

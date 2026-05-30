@@ -207,9 +207,11 @@ tempCodeRunnerFile.py
 # Local raw import of the hackathon source repository.
 zero_one_hack_01/
 
-# Regenerable generated datasets and cluster logs.
+# Regenerable generated datasets, predictions, metrics, and cluster logs.
 data/generated/
 data/eval/
+outputs/metrics/
+outputs/preds/
 outputs/slurm/*
 !outputs/slurm/.gitkeep
 

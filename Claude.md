@@ -9,6 +9,11 @@ Default workflow:
 - Put reusable local scripts in `scripts/` and cluster job scripts in `slurm/`.
 - Put experiment or training configuration in `configs/`.
 - Keep model outputs, prediction CSVs, plots, and logs under `outputs/` or `reports/`.
+- Generated training datasets live under `data/generated/<dataset>/`.
+- Holdout evaluation datasets live under `data/eval/<dataset>/holdout_<family>/{id,ood}/`.
+- Method prediction CSVs live under `outputs/preds/<dataset>/holdout_<family>/{id,ood}/<method>/`.
+- Metric JSON summaries live under `outputs/metrics/<dataset>/holdout_<family>/{id,ood}/<method>/`.
+- Keep deep-learning training outputs/checkpoints separate from classic-baseline predictions and metrics.
 - Reference copied track instructions in `docs/track/` and `data/industrial/generation_rules.md`.
 - Keep `README.md` and `REPORT.md` honest about what runs and what is still pending.
 

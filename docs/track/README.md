@@ -72,10 +72,13 @@ Load in Python (no external dependencies):
 
 ```python
 from pathlib import Path
-from zero_hack.data import load_long_sequences
+from zero_hack.data import load_sequence_records
 
-mosfet_seqs = load_long_sequences(Path("data/industrial/MOSFET_variants.csv"))
-# → dict[sequence_id, list[step_str]]  (1000 sequences)
+mosfet_records = load_sequence_records(
+    Path("data/industrial/MOSFET_variants.csv"),
+    family="mosfet",
+)
+# -> list[SequenceRecord]  (1000 sequences)
 ```
 
 ### 3. Generate More Training Data

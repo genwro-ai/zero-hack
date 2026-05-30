@@ -1,4 +1,4 @@
-"""Symbolic n-gram next-step baseline (default 5-gram)."""
+"""Classic n-gram next-step baseline (default 5-gram)."""
 
 from zero_hack.models.ngram.model import NGramModel
 
