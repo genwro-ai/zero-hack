@@ -1,5 +1,6 @@
 import csv
 import random
+from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -194,29 +195,40 @@ class NextStepDataset:
         vocabulary: Vocabulary,
         max_context: int = 192,
         family_dropout: float = 0.0,
+        step_dropout: float = 0.0,
         seed: int = 1729,
     ) -> None:
         self.records = records
         self.vocabulary = vocabulary
         self.max_context = max_context
         self.family_dropout = family_dropout
+        self.step_dropout = step_dropout
         self.rng = random.Random(seed)
-        self.index: list[tuple[int, int]] = []
-        for record_idx, record in enumerate(records):
-            for position in range(len(record.steps)):
-                self.index.append((record_idx, position))
+        self.offsets: list[int] = []
+        total = 0
+        for record in records:
+            total += len(record.steps)
+            self.offsets.append(total)
 
     def __len__(self) -> int:
-        return len(self.index)
+        return self.offsets[-1] if self.offsets else 0
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        record_idx, position = self.index[idx]
+        if idx < 0 or idx >= len(self):
+            raise IndexError(idx)
+        record_idx = bisect_right(self.offsets, idx)
+        prev_offset = 0 if record_idx == 0 else self.offsets[record_idx - 1]
+        position = idx - prev_offset
         record = self.records[record_idx]
         family_token = FAMILY_TOKENS[record.family]
         if self.family_dropout and self.rng.random() < self.family_dropout:
             family_token = FAMILY_TOKENS["unknown"]
 
         prefix = list(record.steps[:position])
+        if self.step_dropout:
+            prefix = [
+                "<UNK_STEP>" if self.rng.random() < self.step_dropout else step for step in prefix
+            ]
         tokens = ["<BOS>", family_token] + prefix
         tokens = tokens[-self.max_context :]
         input_ids = self.vocabulary.encode(tokens)
