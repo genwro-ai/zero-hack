@@ -78,14 +78,17 @@ model is compared on the same split artifacts.
   frequencies. The sanity-check lower bound.
 - **N-gram** (`models/ngram/`): family-conditioned counting model (default
   5-gram) with stupid-backoff to shorter contexts. The main classic baseline.
+- **HMM** (`models/hmm/`): family-conditioned categorical Hidden Markov Model
+  trained with Baum-Welch, with a global HMM fallback for unseen families.
 
-Both expose `predict_topk` (next step), greedy autoregressive completion, and
+All expose `predict_topk` (next step), greedy autoregressive completion, and
 `score_sequence` (log-likelihood, used as a soft anomaly score). Fit and
 evaluate next-step accuracy directly:
 
 ```bash
 uv run python -m zero_hack.models.most_frequent.train
 uv run python -m zero_hack.models.ngram.train
+uv run python -m zero_hack.models.hmm.train
 ```
 
 Use `--splits-dir data/generated/valid_s100k/splits` to select a dataset size,
@@ -133,7 +136,7 @@ uv run python scripts/make_all_eval_sets.py
 uv run python scripts/run_holdout_experiments.py \
   --datasets valid_s005k \
   --holdout-families ic \
-  --models most_frequent ngram \
+  --models most_frequent ngram hmm \
   --views id ood
 
 # Score a submission against ground truth (mirrors the organizer CLI)
