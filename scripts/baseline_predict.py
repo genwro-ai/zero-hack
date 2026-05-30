@@ -25,18 +25,23 @@ from zero_hack.eval.validator import first_violated_rule, validate_sequence
 from zero_hack.models.common import DEFAULT_RAW_DIR, load_record_splits
 from zero_hack.models.most_frequent import MostFrequentModel
 from zero_hack.models.ngram import NGramModel
+from zero_hack.models.xgboost import XGBoostNextStep
 
 MAX_COMPLETION = 400
 TERMINATOR = "SHIP LOT"
 
 
-def build_model(name: str, train_records: list, *, n: int, alpha: float, bucket: int):
+def build_model(
+    name: str, train_records: list, *, n: int, alpha: float, bucket: int, xgb_kwargs: dict
+):
     if name == "ngram":
         return NGramModel(n=n, backoff_alpha=alpha).fit(train_records)
     if name == "most_frequent":
         return MostFrequentModel(position_bucket_size=bucket, backoff_alpha=alpha).fit(
             train_records
         )
+    if name == "xgboost":
+        return XGBoostNextStep(**xgb_kwargs).fit(train_records)
     raise ValueError(f"Unknown model {name!r}")
 
 
@@ -65,7 +70,7 @@ def predict_anomaly(model, family: str, sequence: list[str], method: str, thresh
             "score": 1.0 if valid else 0.0,
             "predicted_rule": None if valid else first_violated_rule(sequence),
         }
-    # n-gram / counting likelihood: mean per-step log-prob -> validity score.
+    # likelihood: mean per-step log-prob -> validity score.
     n = max(1, len(sequence))
     avg_logprob = model.score_sequence(family, sequence) / n
     # Squash to (0,1): higher avg log-prob -> more likely valid.
@@ -82,17 +87,23 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--model", default="ngram", choices=("ngram", "most_frequent"))
+    parser.add_argument("--model", default="ngram", choices=("ngram", "most_frequent", "xgboost"))
     parser.add_argument("--raw-dir", default=str(DEFAULT_RAW_DIR))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument("--eval-dir", default=str(PROJECT_ROOT / "outputs" / "eval"))
     parser.add_argument("--out-dir", default=None, help="Default: outputs/preds/<model>.")
     parser.add_argument("--tasks", nargs="+", default=["next_step", "completion", "anomaly"])
-    parser.add_argument("--anomaly-method", default="validator", choices=("validator", "ngram"))
+    parser.add_argument(
+        "--anomaly-method", default="validator", choices=("validator", "ngram", "likelihood")
+    )
     parser.add_argument("--anomaly-threshold", type=float, default=-1.0)
     parser.add_argument("--n", type=int, default=5)
     parser.add_argument("--alpha", type=float, default=0.4)
     parser.add_argument("--bucket", type=int, default=5)
+    parser.add_argument("--xgb-estimators", type=int, default=300)
+    parser.add_argument("--xgb-depth", type=int, default=8)
+    parser.add_argument("--xgb-lr", type=float, default=0.3)
+    parser.add_argument("--xgb-lag", type=int, default=8)
     return parser.parse_args()
 
 
@@ -106,7 +117,17 @@ def main() -> None:
     bundle = load_record_splits(args.raw_dir, limit_per_family=args.limit_per_family)
     print(f"counts: {bundle.counts()}")
     model = build_model(
-        args.model, bundle.records["train"], n=args.n, alpha=args.alpha, bucket=args.bucket
+        args.model,
+        bundle.records["train"],
+        n=args.n,
+        alpha=args.alpha,
+        bucket=args.bucket,
+        xgb_kwargs={
+            "n_estimators": args.xgb_estimators,
+            "max_depth": args.xgb_depth,
+            "learning_rate": args.xgb_lr,
+            "lag": args.xgb_lag,
+        },
     )
 
     if "next_step" in args.tasks or "completion" in args.tasks:
