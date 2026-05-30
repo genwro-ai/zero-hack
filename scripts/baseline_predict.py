@@ -25,9 +25,7 @@ def build_model(
     if name == "ngram":
         return NGramModel(n=n, backoff_alpha=alpha).fit(train_records)
     if name == "most_frequent":
-        return MostFrequentModel(position_bucket_size=bucket, backoff_alpha=alpha).fit(
-            train_records
-        )
+        return MostFrequentModel(position_bucket_size=bucket).fit(train_records)
     if name == "xgboost":
         return XGBoostNextStep(**xgb_kwargs).fit(train_records)
     raise ValueError(f"Unknown model {name!r}")
