@@ -65,6 +65,7 @@ def score_task(
     """Dispatch to the scorer for ``task`` (one of :data:`TASKS`)."""
     dispatch = {
         "next_step": score_next_step_files,
+        "next-step": score_next_step_files,
         "completion": score_completion_files,
         "anomaly": score_anomaly_files,
     }
