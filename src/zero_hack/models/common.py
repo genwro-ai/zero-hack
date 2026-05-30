@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +20,7 @@ from zero_hack.data import (
 from zero_hack.models.topk import TopKAccumulator
 
 DEFAULT_SPLITS_DIR = PROJECT_ROOT / "data" / "generated" / "valid_s005k" / "splits"
+DEFAULT_METRICS_DIR = PROJECT_ROOT / "outputs" / "metrics"
 FAMILIES = tuple(FAMILY_FILE_NAMES)
 TEST_SPLIT_PREFIX = "test_"
 
@@ -158,7 +160,7 @@ class TrainConfig:
     max_train_batches: int | None = None
     max_eval_batches: int | None = None
     log_every: int = 50
-    k: int = 3
+    k: int = 5
 
 
 def train_model(
@@ -236,3 +238,101 @@ def evaluate_model(
         for i in range(len(targets)):
             acc.update(int(targets[i]), topk[i].tolist(), group=families[i])
     return acc.summary()
+
+
+def report_splits(bundle: DataBundle) -> tuple[str, ...]:
+    """Splits to report on: the combined test split, then each per-family test split."""
+    return tuple(split for split in ("test", *bundle.test_split_names) if split in bundle.records)
+
+
+def split_role(split: str, bundle: DataBundle) -> str:
+    """``ood`` for the held-out family's test split, ``id`` otherwise."""
+    family = split.removeprefix(TEST_SPLIT_PREFIX)
+    return "ood" if family == bundle.holdout_family else "id"
+
+
+def render_report(
+    model_name: str,
+    bundle: DataBundle,
+    results: dict[str, dict[str, dict[str, float]]],
+    *,
+    k: int,
+) -> str:
+    """Render the next-step results as a markdown table."""
+    topk_key = f"top{k}"
+    holdout = bundle.holdout_family or "none"
+    lines = [
+        f"# {model_name} — next-step results",
+        "",
+        f"Holdout family: {holdout} · top-k = {k}",
+        "",
+        f"| Split | Role | n | top-1 | top-{k} |",
+        "|---|---|---|---|---|",
+    ]
+    for split, summary in results.items():
+        row = summary.get("all", {})
+        label = "test (train families)" if split == "test" else split
+        lines.append(
+            f"| {label} | {split_role(split, bundle)} | {row.get('n', 0)} "
+            f"| {row.get('top1', 0.0):.4f} | {row.get(topk_key, 0.0):.4f} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_eval_report(
+    model_name: str,
+    bundle: DataBundle,
+    results: dict[str, dict[str, dict[str, float]]],
+    *,
+    k: int,
+    report_dir: str | Path = DEFAULT_METRICS_DIR,
+) -> Path:
+    """Persist ``<report_dir>/<model_name>/results.{json,md}`` and return the markdown path."""
+    out_dir = Path(report_dir) / model_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "model": model_name,
+        "holdout_family": bundle.holdout_family,
+        "k": k,
+        "counts": bundle.counts(),
+        "results": results,
+    }
+    json_path = out_dir / "results.json"
+    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    md_text = render_report(model_name, bundle, results, k=k)
+    md_path = out_dir / "results.md"
+    md_path.write_text(md_text + "\n", encoding="utf-8")
+
+    print(md_text)
+    print(f"wrote {json_path}")
+    print(f"wrote {md_path}")
+    return md_path
+
+
+def evaluate_and_report(
+    model: nn.Module,
+    loaders: dict[str, DataLoader],
+    bundle: DataBundle,
+    *,
+    model_name: str,
+    device: torch.device,
+    k: int = 5,
+    max_eval_batches: int | None = None,
+    report_dir: str | Path = DEFAULT_METRICS_DIR,
+) -> Path:
+    """Evaluate a neural model on the test splits, print summaries, and write the report."""
+    results: dict[str, dict[str, dict[str, float]]] = {}
+    for split in report_splits(bundle):
+        summary = evaluate_model(
+            model,
+            loaders[split],
+            device=device,
+            k=k,
+            max_batches=max_eval_batches,
+        )
+        results[split] = summary
+        print(f"{split} ({split_role(split, bundle)}) summary: {summary}")
+    return write_eval_report(model_name, bundle, results, k=k, report_dir=report_dir)

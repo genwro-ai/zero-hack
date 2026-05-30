@@ -9,9 +9,22 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.6",
-    "torch>=2.12.0",
+    "torch>=2.5.1",
     "xgboost>=2.1",
 ]
+
+# Use the CUDA (cu121) wheels only on Linux (the GPU cluster). On macOS the
+# cu121 wheels don't exist, so uv falls back to the default PyPI build
+# (CPU/MPS) which ships arm64 wheels — lets the repo resolve locally on Mac.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
 
 [dependency-groups]
 dev = [

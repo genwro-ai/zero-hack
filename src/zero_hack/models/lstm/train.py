@@ -1,11 +1,12 @@
 import argparse
 
 from zero_hack.models.common import (
+    DEFAULT_METRICS_DIR,
     DEFAULT_SPLITS_DIR,
     DataBundle,
     TrainConfig,
     count_parameters,
-    evaluate_model,
+    evaluate_and_report,
     load_split_records,
     make_loaders,
     pick_device,
@@ -35,7 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-train-batches", type=int, default=None)
     parser.add_argument("--max-eval-batches", type=int, default=None)
     parser.add_argument("--device", default=None)
-    parser.add_argument("--k", type=int, default=3)
+    parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--report-dir", default=str(DEFAULT_METRICS_DIR))
     return parser.parse_args()
 
 
@@ -74,17 +76,16 @@ def main() -> None:
         pad_id=bundle.vocabulary.pad_id,
     )
 
-    for split in bundle.test_split_names:
-        summary = evaluate_model(
-            model,
-            loaders[split],
-            device=device,
-            k=args.k,
-            max_batches=args.max_eval_batches,
-        )
-        label = split.removeprefix("test_")
-        role = "ood" if label == bundle.holdout_family else "id"
-        print(f"{split} ({role}) summary: {summary}")
+    evaluate_and_report(
+        model,
+        loaders,
+        bundle,
+        model_name="lstm",
+        device=device,
+        k=args.k,
+        max_eval_batches=args.max_eval_batches,
+        report_dir=args.report_dir,
+    )
 
 
 if __name__ == "__main__":

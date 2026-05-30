@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class TopKAccumulator:
-    k: int = 3
+    k: int = 5
     total: int = 0
     top1: int = 0
     topk: int = 0
