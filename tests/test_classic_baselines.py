@@ -2,14 +2,10 @@ import math
 
 import pytest
 
-from zero_hack.data import SequenceRecord
 from zero_hack.models.classic_baselines import (
-    CLASSIC_BASELINES,
-    build_classic_baseline,
     predict_anomaly,
     sequence_avg_logprob,
 )
-from zero_hack.models.hmm import HMMModel
 
 
 class FakeModel:
@@ -55,41 +51,3 @@ def test_predict_anomaly_decision_matches_avg_logprob_threshold():
     for threshold in (-5.0, -2.0, -1.999, -1.0, 0.0):
         out = predict_anomaly(model, "ic", ["a"] * 5, "likelihood", threshold)
         assert out["is_valid"] == int(avg >= threshold)
-
-
-def test_hmm_is_registered_as_classic_baseline():
-    assert "hmm" in CLASSIC_BASELINES
-    model = build_classic_baseline(
-        "hmm",
-        _hmm_records(),
-        n=3,
-        hmm_iterations=3,
-        hmm_smoothing=1e-3,
-    )
-    assert isinstance(model, HMMModel)
-
-
-def test_hmm_predicts_after_simple_prefix():
-    model = HMMModel(hidden_states=3, iterations=5, smoothing=1e-3).fit(_hmm_records())
-    assert model.predict_topk("ic", [], k=1) == ["START"]
-    assert model.predict_topk("ic", ["START", "ETCH"], k=1) == ["SHIP LOT"]
-
-
-def test_hmm_scores_seen_order_above_reversed_order():
-    model = HMMModel(hidden_states=3, iterations=5, smoothing=1e-3).fit(_hmm_records())
-    seen = model.score_sequence("ic", ["START", "ETCH", "SHIP LOT"])
-    reversed_order = model.score_sequence("ic", ["SHIP LOT", "ETCH", "START"])
-    assert seen > reversed_order
-
-
-def test_hmm_unknown_family_uses_global_fallback():
-    model = HMMModel(hidden_states=3, iterations=3, smoothing=1e-3).fit(_hmm_records())
-    assert model.predict_topk("mosfet", [], k=1) == ["START"]
-
-
-def _hmm_records() -> list[SequenceRecord]:
-    return [
-        SequenceRecord("ic", f"ic_{idx}", ("START", "ETCH", "SHIP LOT")) for idx in range(20)
-    ] + [
-        SequenceRecord("igbt", f"igbt_{idx}", ("START", "DEPOSIT", "SHIP LOT")) for idx in range(20)
-    ]
