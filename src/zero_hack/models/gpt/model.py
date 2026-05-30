@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -18,16 +19,36 @@ class GPTConfig:
         return asdict(self)
 
 
+def _alibi_slopes(nhead, device):
+    start = 2.0 ** (-8.0 / nhead)
+    return torch.tensor([start ** (i + 1) for i in range(nhead)], device=device)
+
+
+class AlibiAttention(nn.Module):
+    def __init__(self, config: GPTConfig) -> None:
+        super().__init__()
+        self.nhead = config.nhead
+        self.head_dim = config.d_model // config.nhead
+        self.qkv = nn.Linear(config.d_model, 3 * config.d_model)
+        self.proj = nn.Linear(config.d_model, config.d_model)
+        self.dropout = config.dropout
+
+    def forward(self, hidden, attn_mask):
+        batch, seq_len, _ = hidden.shape
+        qkv = self.qkv(hidden).reshape(batch, seq_len, 3, self.nhead, self.head_dim)
+        query, key, value = qkv.permute(2, 0, 3, 1, 4)
+        attended = F.scaled_dot_product_attention(
+            query, key, value, attn_mask=attn_mask, dropout_p=self.dropout if self.training else 0.0
+        )
+        attended = attended.transpose(1, 2).reshape(batch, seq_len, -1)
+        return self.proj(attended)
+
+
 class GPTBlock(nn.Module):
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         self.ln_attn = nn.LayerNorm(config.d_model)
-        self.attn = nn.MultiheadAttention(
-            config.d_model,
-            config.nhead,
-            dropout=config.dropout,
-            batch_first=True,
-        )
+        self.attn = AlibiAttention(config)
         self.ln_mlp = nn.LayerNorm(config.d_model)
         self.mlp = nn.Sequential(
             nn.Linear(config.d_model, config.dim_feedforward),
@@ -37,29 +58,14 @@ class GPTBlock(nn.Module):
             nn.Dropout(config.dropout),
         )
 
-    def forward(
-        self,
-        hidden: torch.Tensor,
-        *,
-        causal_mask: torch.Tensor,
-        key_padding_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        normed = self.ln_attn(hidden)
-        attended, _ = self.attn(
-            normed,
-            normed,
-            normed,
-            attn_mask=causal_mask,
-            key_padding_mask=key_padding_mask,
-            need_weights=False,
-        )
-        hidden = hidden + attended
+    def forward(self, hidden, attn_mask):
+        hidden = hidden + self.attn(self.ln_attn(hidden), attn_mask)
         hidden = hidden + self.mlp(self.ln_mlp(hidden))
         return hidden
 
 
 class GPTNextStepModel(nn.Module):
-    """Small decoder-only model for categorical process-step next-token prediction."""
+    """Decoder-only model with ALiBi attention for process-step next-token prediction."""
 
     def __init__(self, vocab_size: int, config: GPTConfig, pad_id: int = 0) -> None:
         super().__init__()
@@ -67,40 +73,45 @@ class GPTNextStepModel(nn.Module):
         self.pad_id = pad_id
 
         self.token_embedding = nn.Embedding(vocab_size, config.d_model, padding_idx=pad_id)
-        self.position_embedding = nn.Embedding(config.max_context, config.d_model)
         self.dropout = nn.Dropout(config.dropout)
         self.blocks = nn.ModuleList(GPTBlock(config) for _ in range(config.num_layers))
         self.ln_f = nn.LayerNorm(config.d_model)
         self.head = nn.Linear(config.d_model, vocab_size, bias=False)
-
         if config.tie_embeddings:
             self.head.weight = self.token_embedding.weight
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        _, seq_len = input_ids.shape
+    def _hidden(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        seq_len = input_ids.size(1)
         if seq_len > self.config.max_context:
             input_ids = input_ids[:, -self.config.max_context :]
             attention_mask = attention_mask[:, -self.config.max_context :]
-            seq_len = self.config.max_context
+            seq_len = input_ids.size(1)
 
-        positions = torch.arange(seq_len, device=input_ids.device)
-        hidden = self.token_embedding(input_ids) + self.position_embedding(positions)
-        hidden = self.dropout(hidden)
+        device = input_ids.device
+        hidden = self.dropout(self.token_embedding(input_ids))
 
-        causal_mask = torch.triu(
-            torch.ones(seq_len, seq_len, dtype=torch.bool, device=input_ids.device),
-            diagonal=1,
-        )
-        key_padding_mask = ~attention_mask
+        causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool, device=device))
+        keep = causal[None, None] & attention_mask[:, None, None, :]
+        positions = torch.arange(seq_len, device=device)
+        dist = (positions[:, None] - positions[None, :]).float()
+        bias = (-_alibi_slopes(self.config.nhead, device)[:, None, None] * dist).unsqueeze(0)
+        blocked = torch.zeros_like(keep, dtype=torch.float).masked_fill(~keep, -torch.inf)
+        attn_mask = bias + blocked
 
         for block in self.blocks:
-            hidden = block(
-                hidden,
-                causal_mask=causal_mask,
-                key_padding_mask=key_padding_mask,
-            )
+            hidden = block(hidden, attn_mask)
+        return self.ln_f(hidden), attention_mask
 
-        hidden = self.ln_f(hidden)
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        hidden, attention_mask = self._hidden(input_ids, attention_mask)
         last_valid = attention_mask.long().sum(dim=1).clamp_min(1) - 1
         batch_idx = torch.arange(hidden.size(0), device=hidden.device)
         return self.head(hidden[batch_idx, last_valid, :])
+
+    def sequence_logits(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> torch.Tensor:
+        hidden, _ = self._hidden(input_ids, attention_mask)
+        return self.head(hidden)

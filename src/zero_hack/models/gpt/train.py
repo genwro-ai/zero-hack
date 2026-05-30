@@ -5,13 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from zero_hack import PROJECT_ROOT
 from zero_hack.data import FAMILY_TOKENS, SPECIAL_TOKENS, NextStepDataset, Vocabulary
@@ -28,6 +30,7 @@ from zero_hack.models.common import (
 from zero_hack.models.gpt.model import GPTConfig, GPTNextStepModel
 
 MODEL_NAME = "gpt_decoder"
+CAUSAL_IGNORE = -100
 
 
 def build_model(bundle: DataBundle, config: GPTConfig) -> GPTNextStepModel:
@@ -82,6 +85,164 @@ def predict_topk(
         logits[torch.tensor(invalid_ids, device=device)] = -torch.inf
     top_ids = torch.topk(logits, k=min(k, logits.numel())).indices.tolist()
     return [vocabulary.id_to_token[token_id] for token_id in top_ids]
+
+
+class SequenceDataset(Dataset):
+    def __init__(self, records, vocabulary, max_len):
+        self.rows = []
+        for record in records:
+            tokens = ["<BOS>", FAMILY_TOKENS[record.family], *record.steps, "<EOS>"]
+            ids = vocabulary.encode(tokens)[:max_len]
+            if len(ids) >= 3:
+                self.rows.append(ids)
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, idx):
+        return self.rows[idx]
+
+
+def collate_sequences(batch, pad_id):
+    width = max(len(ids) for ids in batch) - 1
+    inputs, labels, mask = [], [], []
+    for ids in batch:
+        prefix = ids[:-1]
+        pad = width - len(prefix)
+        inputs.append(prefix + [pad_id] * pad)
+        labels.append([CAUSAL_IGNORE] + ids[2:] + [CAUSAL_IGNORE] * pad)
+        mask.append([1] * len(prefix) + [0] * pad)
+    return (
+        torch.tensor(inputs),
+        torch.tensor(labels),
+        torch.tensor(mask, dtype=torch.bool),
+    )
+
+
+def _causal_loss(model, loader, device):
+    model.eval()
+    use_cuda = device.type == "cuda"
+    total, seen = 0.0, 0
+    with torch.no_grad():
+        for inputs, labels, mask in loader:
+            inputs, labels, mask = inputs.to(device), labels.to(device), mask.to(device)
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_cuda):
+                logits = model.sequence_logits(inputs, mask)
+                loss = F.cross_entropy(
+                    logits.flatten(0, 1), labels.flatten(), ignore_index=CAUSAL_IGNORE
+                )
+            total += float(loss.item())
+            seen += 1
+    return total / max(1, seen)
+
+
+def fit_causal_lm(
+    model, train_records, valid_records, vocabulary, device, epochs, batch_size, lr, patience,
+    num_workers=0, phase_loss=None,
+):
+    model = model.to(device)
+    train_data = SequenceDataset(train_records, vocabulary, model.config.max_context)
+    if len(train_data) == 0:
+        return model
+    use_cuda = device.type == "cuda"
+    collate = partial(collate_sequences, pad_id=vocabulary.pad_id)
+    train_loader = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate,
+        num_workers=num_workers,
+        pin_memory=use_cuda,
+        persistent_workers=num_workers > 0,
+    )
+    valid_data = SequenceDataset(valid_records, vocabulary, model.config.max_context)
+    valid_loader = DataLoader(
+        valid_data,
+        batch_size=batch_size,
+        collate_fn=collate,
+        num_workers=num_workers,
+        pin_memory=use_cuda,
+        persistent_workers=num_workers > 0,
+    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1, betas=(0.9, 0.95))
+    total = max(1, len(train_loader) * epochs)
+    warmup = max(1, int(0.05 * total))
+    scheduler = LambdaLR(optimizer, lambda s: _lr_lambda(s, warmup_steps=warmup, total_steps=total))
+    best_loss, best_state, stale = math.inf, None, 0
+    for epoch in range(1, epochs + 1):
+        model.train()
+        running = 0.0
+        for inputs, labels, mask in train_loader:
+            inputs, labels, mask = inputs.to(device), labels.to(device), mask.to(device)
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_cuda):
+                logits = model.sequence_logits(inputs, mask)
+                flat_logits, flat_labels = logits.flatten(0, 1), labels.flatten()
+                loss = F.cross_entropy(flat_logits, flat_labels, ignore_index=CAUSAL_IGNORE)
+                if phase_loss is not None:
+                    loss = loss + phase_loss(flat_logits, flat_labels)
+            optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+            running += float(loss.item())
+        train_loss = running / max(1, len(train_loader))
+        valid_loss = _causal_loss(model, valid_loader, device) if len(valid_data) else train_loss
+        print(
+            f"  gpt epoch {epoch}/{epochs} train={train_loss:.4f} valid={valid_loss:.4f}",
+            flush=True,
+        )
+        if valid_loss < best_loss - 1e-3:
+            best_loss = valid_loss
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            stale = 0
+        else:
+            stale += 1
+            if stale >= patience:
+                print(f"  early stop at epoch {epoch} best_valid={best_loss:.4f}", flush=True)
+                break
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return model
+
+
+class CausalLMAdapter:
+    def __init__(self, model, vocabulary, device):
+        self.model = model.to(device).eval()
+        self.vocabulary = vocabulary
+        self.device = device
+        self.invalid_ids = _invalid_prediction_ids(vocabulary)
+
+    @torch.no_grad()
+    def predict_topk(self, family, prefix_steps, k=3):
+        input_ids, mask = _encode_prefix(
+            self.vocabulary,
+            family,
+            list(prefix_steps),
+            max_context=self.model.config.max_context,
+            device=self.device,
+        )
+        logits = self.model(input_ids, mask).squeeze(0)
+        if self.invalid_ids:
+            logits[torch.tensor(self.invalid_ids, device=self.device)] = -torch.inf
+        top = torch.topk(logits, min(k, logits.numel())).indices.tolist()
+        return [self.vocabulary.id_to_token[i] for i in top]
+
+    @torch.no_grad()
+    def score_sequence(self, family, steps):
+        steps = list(steps)
+        if not steps:
+            return 0.0
+        input_ids, mask = _encode_prefix(
+            self.vocabulary,
+            family,
+            steps,
+            max_context=self.model.config.max_context,
+            device=self.device,
+        )
+        log_probs = F.log_softmax(self.model.sequence_logits(input_ids, mask)[0, :-1], dim=-1)
+        chosen = log_probs.gather(1, input_ids[0, 1:, None]).squeeze(1)
+        return float(chosen[1:].sum())
 
 
 def _lr_lambda(step: int, *, warmup_steps: int, total_steps: int) -> float:
