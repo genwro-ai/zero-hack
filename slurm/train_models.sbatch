@@ -20,9 +20,9 @@ set -euo pipefail
 #   task 0 -> LSTM         (zero_hack.models.lstm.train)
 #   task 1 -> Transformer  (zero_hack.models.transformer.train)
 #
-# Each task trains on the chosen dataset's raw CSVs, logs train/val loss per
-# epoch, and saves the best-validation-loss checkpoint + vocab.json under
-#   outputs/models/<dataset>/<model>/{best.pt,vocab.json}
+# Each task trains on the chosen dataset's train/valid/test splits, logs
+# train/val loss per epoch, and writes the next-step eval report under
+#   outputs/models/<dataset>/<model>/results.{json,md}
 #
 # Submit both models:
 #   sbatch slurm/train_models.sbatch
@@ -72,14 +72,15 @@ MAX_CONTEXT="${MAX_CONTEXT:-192}"
 K="${K:-3}"
 RUNNER="${RUNNER:-srun}"
 
-RAW_DIR="${OUTPUT_ROOT}/${DATASET}/raw"
-OUT_DIR="${MODEL_ROOT}/${DATASET}/${MODEL}"
+SPLITS_DIR="${OUTPUT_ROOT}/${DATASET}/splits"
+REPORT_DIR="${MODEL_ROOT}/${DATASET}"
+OUT_DIR="${REPORT_DIR}/${MODEL}"
 
 mkdir -p outputs/slurm "$OUT_DIR"
 
 ARGS=(
-  --raw-dir "$RAW_DIR"
-  --out-dir "$OUT_DIR"
+  --splits-dir "$SPLITS_DIR"
+  --report-dir "$REPORT_DIR"
   --epochs "$EPOCHS"
   --batch-size "$BATCH_SIZE"
   --lr "$LR"
@@ -96,8 +97,8 @@ if [[ -n "${EXTRA_ARGS:-}" ]]; then
   ARGS+=($EXTRA_ARGS)
 fi
 
-printf "task_id=%s model=%s dataset=%s raw=%s out=%s epochs=%s\n" \
-  "$TASK_ID" "$MODEL" "$DATASET" "$RAW_DIR" "$OUT_DIR" "$EPOCHS"
+printf "task_id=%s model=%s dataset=%s splits=%s out=%s epochs=%s\n" \
+  "$TASK_ID" "$MODEL" "$DATASET" "$SPLITS_DIR" "$OUT_DIR" "$EPOCHS"
 
 time "$RUNNER" uv run python -m "zero_hack.models.${MODEL}.train" "${ARGS[@]}"
 
