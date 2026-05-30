@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-wafer", type=_optional_bool, default=None)
     parser.add_argument("--epitaxial-rework-check", type=_optional_bool, default=None)
     parser.add_argument("--pre-anneal-check", type=_optional_bool, default=None)
-    parser.add_argument("--second-metal-layer", type=_optional_bool, default=None)
+    parser.add_argument("--second-metal-layer", type=_optional_bool, default=False)
     parser.add_argument("--cmp-after-via-fill", type=_optional_bool, default=None)
     parser.add_argument(
         "--synonym-style",

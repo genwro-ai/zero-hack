@@ -10,6 +10,7 @@ import random
 from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
+from zero_hack.data import FAMILY_FILE_NAMES, load_sequence_records
 from zero_hack.eval.anomaly_synth import corrupt_steps
 from zero_hack.eval.io import join_steps
 from zero_hack.models.common import DEFAULT_SPLITS_DIR, FAMILIES, load_split_records
@@ -52,9 +53,26 @@ def parse_args() -> argparse.Namespace:
         help="Invalid sequences/family for Task 3.",
     )
     parser.add_argument("--seed", type=int, default=1729)
-    parser.add_argument("--split", default="test", choices=("train", "valid", "test"))
+    parser.add_argument(
+        "--split",
+        default="test",
+        choices=("train", "valid", "test", "test_standard", "test_diverse"),
+    )
     parser.add_argument("--out-dir", default=str(PROJECT_ROOT / "data" / "eval" / "default"))
     return parser.parse_args()
+
+
+def _family_split_records(
+    splits_dir: Path,
+    family: str,
+    split: str,
+    limit_per_family: int | None,
+) -> list:
+    family_name = FAMILY_FILE_NAMES[family].removesuffix(".csv")
+    records = load_sequence_records(splits_dir / f"{family_name}_{split}.csv")
+    if limit_per_family is not None:
+        return records[:limit_per_family]
+    return records
 
 
 def main() -> None:
@@ -69,13 +87,35 @@ def main() -> None:
     )
     eval_families = tuple(args.eval_families or FAMILIES)
     if args.eval_families:
-        split = "family_tests"
+        split = args.split
         records = []
         for family in eval_families:
-            records.extend(bundle.records[f"test_{family}"])
+            if args.split == "test":
+                records.extend(bundle.records[f"test_{family}"])
+            else:
+                records.extend(
+                    _family_split_records(
+                        Path(args.splits_dir),
+                        family,
+                        args.split,
+                        args.limit_per_family,
+                    )
+                )
     else:
         split = args.split
-        records = bundle.records[split]
+        if args.split in bundle.records:
+            records = bundle.records[split]
+        else:
+            records = load_sequence_records(Path(args.splits_dir) / f"{args.split}.csv")
+            if args.limit_per_family is not None:
+                by_family_limited = []
+                counts = {family: 0 for family in FAMILIES}
+                for record in records:
+                    if counts[record.family] >= args.limit_per_family:
+                        continue
+                    by_family_limited.append(record)
+                    counts[record.family] += 1
+                records = by_family_limited
     by_family: dict[str, list] = {}
     for rec in records:
         by_family.setdefault(rec.family, []).append(rec)

@@ -86,6 +86,19 @@ After raw generation finishes:
 sbatch slurm/create_dataset_splits.sbatch
 ```
 
+For the richer 40/60 vanilla/augmented training setup:
+
+```bash
+sbatch slurm/generate_valid_datasets.sbatch
+sbatch slurm/generate_augmented_datasets.sbatch
+sbatch slurm/create_mixed_dataset_splits.sbatch
+sbatch slurm/make_eval_sets.sbatch
+```
+
+This writes mixed training/validation splits under
+`data/generated/mixed_s<size>_v40_a60/splits/` and creates both standard
+vanilla eval suites and diverse augmented eval suites under `data/eval/`.
+
 Useful overrides:
 
 ```bash

@@ -18,7 +18,7 @@ from zero_hack.models.classic_baselines import (
 from zero_hack.models.common import FAMILIES, load_split_records
 
 _DATASET_SIZE = re.compile(r"_s(\d+)k$")
-_VIEWS = ("id", "ood")
+_VIEWS = ("id", "ood", "standard/id", "standard/ood", "diverse/id", "diverse/ood")
 
 
 def _dataset_sort_key(name: str) -> tuple[int, str]:
@@ -165,7 +165,7 @@ def _parse_args() -> argparse.Namespace:
         choices=CLASSIC_BASELINES,
         default=["most_frequent", "ngram"],
     )
-    parser.add_argument("--views", nargs="+", choices=_VIEWS, default=list(_VIEWS))
+    parser.add_argument("--views", nargs="+", choices=_VIEWS, default=["id", "ood"])
     parser.add_argument("--tasks", nargs="+", choices=TASKS, default=list(TASKS))
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument(

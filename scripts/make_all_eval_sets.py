@@ -59,6 +59,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fractions", type=float, nargs="+", default=[0.6, 0.8])
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--split", default="test", choices=("train", "valid", "test"))
+    parser.add_argument(
+        "--eval-sources",
+        nargs="+",
+        choices=("test", "test_standard", "test_diverse"),
+        default=["test"],
+        help=(
+            "Source test splits to evaluate. 'test' preserves the legacy "
+            "<holdout>/{id,ood} layout; test_standard and test_diverse write "
+            "<holdout>/{standard,diverse}/{id,ood}."
+        ),
+    )
     parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument(
         "--holdout-families",
@@ -73,6 +84,19 @@ def parse_args() -> argparse.Namespace:
         help="Print commands without running them.",
     )
     return parser.parse_args()
+
+
+def _source_out_dir(
+    out_root: Path,
+    dataset: str,
+    holdout_family: str,
+    source: str,
+    view: str,
+) -> Path:
+    base = out_root / dataset / f"holdout_{holdout_family}"
+    if source == "test":
+        return base / view
+    return base / source.removeprefix("test_") / view
 
 
 def main() -> None:
@@ -95,37 +119,39 @@ def main() -> None:
                 "id": [family for family in ("mosfet", "igbt", "ic") if family != holdout_family],
                 "ood": [holdout_family],
             }
-            for view_name, eval_families in eval_views.items():
-                cmd = [
-                    sys.executable,
-                    str(script),
-                    "--splits-dir",
-                    str(splits_dir),
-                    "--out-dir",
-                    str(out_root / dataset / f"holdout_{holdout_family}" / view_name),
-                    "--holdout-family",
-                    holdout_family,
-                    "--eval-families",
-                    *eval_families,
-                    "--n-valid",
-                    str(args.n_valid),
-                    "--n-anomaly-valid",
-                    str(args.n_anomaly_valid),
-                    "--n-anomaly-invalid",
-                    str(args.n_anomaly_invalid),
-                    "--seed",
-                    str(args.seed),
-                    "--split",
-                    args.split,
-                    "--fractions",
-                    *[str(value) for value in args.fractions],
-                ]
-                if args.limit_per_family is not None:
-                    cmd.extend(["--limit-per-family", str(args.limit_per_family)])
+            for source in args.eval_sources:
+                split = args.split if source == "test" else source
+                for view_name, eval_families in eval_views.items():
+                    cmd = [
+                        sys.executable,
+                        str(script),
+                        "--splits-dir",
+                        str(splits_dir),
+                        "--out-dir",
+                        str(_source_out_dir(out_root, dataset, holdout_family, source, view_name)),
+                        "--holdout-family",
+                        holdout_family,
+                        "--eval-families",
+                        *eval_families,
+                        "--n-valid",
+                        str(args.n_valid),
+                        "--n-anomaly-valid",
+                        str(args.n_anomaly_valid),
+                        "--n-anomaly-invalid",
+                        str(args.n_anomaly_invalid),
+                        "--seed",
+                        str(args.seed),
+                        "--split",
+                        split,
+                        "--fractions",
+                        *[str(value) for value in args.fractions],
+                    ]
+                    if args.limit_per_family is not None:
+                        cmd.extend(["--limit-per-family", str(args.limit_per_family)])
 
-                print(" ".join(cmd), flush=True)
-                if not args.dry_run:
-                    subprocess.run(cmd, check=True)
+                    print(" ".join(cmd), flush=True)
+                    if not args.dry_run:
+                        subprocess.run(cmd, check=True)
 
 
 if __name__ == "__main__":

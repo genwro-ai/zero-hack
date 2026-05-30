@@ -32,6 +32,7 @@ set -euo pipefail
 #
 # Common overrides:
 #   DATASET=valid_s100k
+#   EVAL_VIEWS="standard/id standard/ood diverse/id diverse/ood"
 #   HOLDOUT_FAMILY=ic
 #   EPOCHS=30
 #   PATIENCE=5
@@ -71,6 +72,7 @@ BATCH_SIZE="${BATCH_SIZE:-128}"
 LR="${LR:-3e-4}"
 MAX_CONTEXT="${MAX_CONTEXT:-192}"
 K="${K:-5}"
+EVAL_VIEWS="${EVAL_VIEWS:-id ood}"
 RUNNER="${RUNNER:-srun}"
 
 mkdir -p outputs/slurm "$SLURM_OUTPUT_ROOT"/{models,preds,metrics}
@@ -90,6 +92,7 @@ ARGS=(
   --lr "$LR"
   --max-context "$MAX_CONTEXT"
   --k "$K"
+  --eval-views $EVAL_VIEWS
   --device cuda
 )
 

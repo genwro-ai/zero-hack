@@ -25,7 +25,7 @@ class AugmentationOptions:
     dry_wafer: bool | None = None
     epitaxial_rework_check: bool | None = None
     pre_anneal_check: bool | None = None
-    second_metal_layer: bool | None = None
+    second_metal_layer: bool | None = False
     cmp_after_via_fill: bool | None = None
     synonym_style: SynonymStyle = "random"
 
@@ -314,7 +314,7 @@ def _generic_core_cycle(
 
 def _core_cycle_count(rng: random.Random, family: str, cfg: AugmentationOptions) -> int:
     if cfg.litho_cycles is None:
-        return rng.randint(3, 6)
+        return {"mosfet": 2, "igbt": 4, "ic": 2}[family]
     if not 3 <= cfg.litho_cycles <= 6:
         raise ValueError(f"{family} litho_cycles must be between 3 and 6")
     return cfg.litho_cycles
@@ -508,10 +508,7 @@ def _gen_test_suite(
     if family_test != param:
         steps.append(family_test)
     steps.append("SWITCHING TEST")
-    if family == "igbt" and rng.random() > 0.5:
-        steps += ["YIELD ANALYSIS", "WAFER SORT TEST"]
-    else:
-        steps += ["WAFER SORT TEST", "YIELD ANALYSIS"]
+    steps += ["WAFER SORT TEST", "YIELD ANALYSIS"]
     return steps
 
 

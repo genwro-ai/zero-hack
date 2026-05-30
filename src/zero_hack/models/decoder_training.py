@@ -215,10 +215,11 @@ def _write_eval_set_next_step(
     device: torch.device,
     k: int,
     max_context: int,
+    eval_views: tuple[str, ...],
 ) -> dict[str, dict[str, Any]]:
     results: dict[str, dict[str, Any]] = {}
     invalid_ids = _invalid_prediction_ids(bundle.vocabulary)
-    for view in ("id", "ood"):
+    for view in eval_views:
         eval_dir = eval_root / dataset / f"holdout_{holdout_family}" / view
         if not eval_dir.exists():
             print(f"skip eval-set {view}: missing {eval_dir}")
@@ -319,6 +320,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-eval-batches", type=int, default=None)
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--eval-views", nargs="+", default=["id", "ood"])
 
     parser.add_argument("--d-model", type=int, default=128)
     parser.add_argument("--nhead", type=int, default=4)
@@ -473,6 +475,7 @@ def main() -> None:
         device=device,
         k=args.k,
         max_context=args.max_context,
+        eval_views=tuple(args.eval_views),
     )
     (run_dir / "eval_set_next_step.json").write_text(
         json.dumps(eval_set_results, indent=2) + "\n",

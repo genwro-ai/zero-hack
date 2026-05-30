@@ -28,10 +28,24 @@ def core_litho_levels(steps: list[str]) -> list[int]:
     return levels
 
 
+REFERENCE_LENGTH_LIMITS = {
+    "mosfet": int(126 * 1.2),
+    "igbt": int(151 * 1.2),
+    "ic": int(107 * 1.2),
+}
+
+
 @pytest.mark.parametrize("family", ["mosfet", "igbt", "ic"])
 def test_augmented_sequence_uses_organizer_validator(family):
     steps = generate_augmented_sequence(family, random.Random(7))
     assert_valid(steps)
+
+
+@pytest.mark.parametrize("family", ["mosfet", "igbt", "ic"])
+@pytest.mark.parametrize("seed", range(20))
+def test_default_augmented_sequences_stay_near_reference_length(family, seed):
+    steps = generate_augmented_sequence(family, random.Random(seed))
+    assert len(steps) <= REFERENCE_LENGTH_LIMITS[family]
 
 
 @pytest.mark.parametrize("family", ["mosfet", "igbt", "ic"])
@@ -172,6 +186,13 @@ def test_can_force_second_metal_layer():
     assert_valid(present)
     assert_valid(absent)
     assert present.count("METAL PATTERN INSPECTION") == absent.count("METAL PATTERN INSPECTION") + 1
+
+
+@pytest.mark.parametrize("family", ["mosfet", "igbt", "ic"])
+@pytest.mark.parametrize("seed", range(20))
+def test_test_suite_keeps_fixed_sort_before_yield_order(family, seed):
+    steps = generate_augmented_sequence(family, random.Random(seed))
+    assert steps.index("WAFER SORT TEST") < steps.index("YIELD ANALYSIS")
 
 
 def test_can_make_via_cmp_optional():
