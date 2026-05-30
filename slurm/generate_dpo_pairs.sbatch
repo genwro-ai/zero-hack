@@ -36,9 +36,9 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 source slurm/setup_uv.sh
 
 DATASET="${DATASET:-valid_s100k}"
-UNSEEN_COUNT="${UNSEEN_COUNT:-50000}"
-UNSEEN_DATASET="${UNSEEN_DATASET:-unseen_s050k}"
-RUN_DATASET="${RUN_DATASET:-${DATASET}_unseen_s050k}"
+AUGMENT_COUNT="${AUGMENT_COUNT:-50000}"
+AUGMENT_DATASET="${AUGMENT_DATASET:-augmented_s050k}"
+RUN_DATASET="${RUN_DATASET:-${DATASET}_augmented_s050k}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 DPO_ROOT="${DPO_ROOT:-data/generated/dpo_pairs}"
 PAIRS="${PAIRS:-100000}"
@@ -48,7 +48,7 @@ HOLDOUTS=(mosfet igbt ic)
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 HOLDOUT_FAMILY="${HOLDOUTS[$TASK_ID]}"
 SPLITS_DIR="$GENERATED_ROOT/$DATASET/splits"
-UNSEEN_CSV="$GENERATED_ROOT/$UNSEEN_DATASET/raw.csv"
+AUGMENT_CSV="$GENERATED_ROOT/$AUGMENT_DATASET/raw.csv"
 OUT="$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs.jsonl"
 
 mkdir -p outputs/slurm "$(dirname "$OUT")"
@@ -59,12 +59,12 @@ if [[ ! -s "$SPLITS_DIR/MOSFET_train.csv" ]]; then
   exit 2
 fi
 
-if [[ ! -s "$UNSEEN_CSV" || "${FORCE_UNSEEN:-0}" == "1" ]]; then
-  printf "generating unseen augmentation count=%s -> %s\n" "$UNSEEN_COUNT" "$UNSEEN_CSV"
-  time "$RUNNER" uv run python scripts/generate_unseen_data.py \
-    --count "$UNSEEN_COUNT" \
-    --dataset "$UNSEEN_DATASET" \
-    --seed "${UNSEEN_SEED:-4250}"
+if [[ ! -s "$AUGMENT_CSV" || "${FORCE_AUGMENT:-0}" == "1" ]]; then
+  printf "generating augmentation count=%s -> %s\n" "$AUGMENT_COUNT" "$AUGMENT_CSV"
+  time "$RUNNER" uv run python scripts/generate_augmented_sequences.py \
+    --count "$AUGMENT_COUNT" \
+    --dataset "$AUGMENT_DATASET" \
+    --seed "${AUGMENT_SEED:-4250}"
 fi
 
 if [[ -s "$OUT" && "${FORCE_DPO_PAIRS:-0}" != "1" ]]; then
@@ -78,7 +78,7 @@ printf "generating DPO pairs holdout=%s pairs=%s -> %s\n" \
 time "$RUNNER" uv run python scripts/generate_dpo_pairs.py \
   --splits-dir "$SPLITS_DIR" \
   --holdout-family "$HOLDOUT_FAMILY" \
-  --augment-train-csv "$UNSEEN_CSV" \
+  --augment-train-csv "$AUGMENT_CSV" \
   --augment-family-mode unknown \
   --pairs "$PAIRS" \
   --out "$OUT" \

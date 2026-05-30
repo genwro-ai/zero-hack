@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import random
 import re
 from pathlib import Path
 from typing import Any
 
 from zero_hack import PROJECT_ROOT
-from zero_hack.data import SequenceRecord
-from zero_hack.eval.anomaly import score_anomaly
-from zero_hack.eval.anomaly_synth import build_rule_stratified_corruptions
-from zero_hack.eval.completion import score_completion
-from zero_hack.eval.next_step import score_next_step
-from zero_hack.eval.score import TASKS
-from zero_hack.models.anomaly_threshold import tune_anomaly_threshold
+from zero_hack.eval import io
+from zero_hack.eval.score import TASKS, score_task
+from zero_hack.models.anomaly_threshold import tune_anomaly_threshold_from_eval_dir
 from zero_hack.models.classic_baselines import (
     CLASSIC_BASELINES,
     build_classic_baseline,
     complete_sequence,
     predict_anomaly,
 )
-from zero_hack.models.common import FAMILIES, family_test_split, load_split_records
+from zero_hack.models.common import FAMILIES, load_split_records
 
 _DATASET_SIZE = re.compile(r"_s(\d+)k$")
 _VIEWS = ("id", "ood")
@@ -41,134 +36,117 @@ def _discover_datasets(generated_root: Path) -> list[str]:
     return sorted(datasets, key=_dataset_sort_key)
 
 
-def _records_by_family(records: list[SequenceRecord]) -> dict[str, list[SequenceRecord]]:
-    by_family: dict[str, list[SequenceRecord]] = {}
-    for record in records:
-        by_family.setdefault(record.family, []).append(record)
-    return by_family
+def _truth_path(eval_dir: Path, task: str) -> Path:
+    return (
+        eval_dir
+        / {
+            "next_step": "nextstep_truth.csv",
+            "completion": "completion_truth.csv",
+            "anomaly": "anomaly_truth.csv",
+        }[task]
+    )
 
 
-def _limit_records_per_family(
-    records: list[SequenceRecord],
-    limit: int | None,
-    *,
-    seed: int,
-) -> list[SequenceRecord]:
-    if limit is None:
-        return records
-    rng = random.Random(seed)
-    selected: list[SequenceRecord] = []
-    for _family, family_records in sorted(_records_by_family(records).items()):
-        family_records = list(family_records)
-        rng.shuffle(family_records)
-        selected.extend(family_records[:limit])
-    return selected
+def _eval_input_path(eval_dir: Path, task: str) -> Path:
+    if task == "anomaly":
+        return eval_dir / "eval_input_anomaly.csv"
+    return eval_dir / "eval_input_valid.csv"
 
 
-def _records_for_view(bundle: Any, view: str) -> list[SequenceRecord]:
-    if view == "id":
-        return bundle.records["test"]
-    if bundle.holdout_family is None:
-        return []
-    return bundle.records[family_test_split(bundle.holdout_family)]
+def _pred_path(pred_dir: Path, task: str) -> Path:
+    return (
+        pred_dir
+        / {
+            "next_step": "nextstep.csv",
+            "completion": "completion.csv",
+            "anomaly": "anomaly.csv",
+        }[task]
+    )
 
 
-def _score_next_step(model: Any, records: list[SequenceRecord]) -> dict:
-    truth: dict[str, str] = {}
-    predictions: dict[str, list[str]] = {}
-    families: dict[str, str] = {}
-    for record in records:
-        for position, gold_step in enumerate(record.steps):
-            example_id = f"{record.family}_{record.sequence_id}_{position:04d}"
-            truth[example_id] = gold_step
-            predictions[example_id] = model.predict_topk(
-                record.family,
-                record.steps[:position],
-                k=5,
-            )
-            families[example_id] = record.family
-    return score_next_step(truth, predictions, families=families)
-
-
-def _score_completion(
+def _write_eval_predictions(
     model: Any,
-    records: list[SequenceRecord],
     *,
-    fractions: tuple[float, ...],
-) -> dict:
-    truth: dict[str, list[str]] = {}
-    predictions: dict[str, list[str]] = {}
-    families: dict[str, str] = {}
-    for record in records:
-        steps = list(record.steps)
-        for fraction in fractions:
-            cut = int(len(steps) * fraction)
-            cut = max(1, min(cut, len(steps) - 1))
-            example_id = f"{record.family}_{record.sequence_id}_f{int(fraction * 100)}"
-            prefix = steps[:cut]
-            truth[example_id] = steps[cut:]
-            predictions[example_id] = complete_sequence(model, record.family, prefix)
-            families[example_id] = record.family
-    return score_completion(truth, predictions, families=families)
-
-
-def _score_anomaly_task(
-    model: Any,
-    records: list[SequenceRecord],
-    *,
+    eval_dir: Path,
+    pred_dir: Path,
+    tasks: tuple[str, ...],
     threshold: float,
-    n_valid_per_family: int,
-    n_invalid_per_family: int,
-    seed: int,
-) -> dict:
-    rng = random.Random(seed)
-    truth: dict[str, dict] = {}
-    predictions: dict[str, dict] = {}
-    families: dict[str, str] = {}
+    k: int,
+    max_completion_steps: int,
+) -> None:
+    pred_dir.mkdir(parents=True, exist_ok=True)
+    if "next_step" in tasks or "completion" in tasks:
+        inputs = io.read_eval_input_valid(eval_dir / "eval_input_valid.csv")
+        if "next_step" in tasks:
+            rows = [
+                {
+                    "example_id": row["example_id"],
+                    "ranks": model.predict_topk(row["family"], row["partial_sequence"], k=k),
+                }
+                for row in inputs
+            ]
+            io.write_next_step_predictions(pred_dir / "nextstep.csv", rows)
 
-    for family, family_records in sorted(_records_by_family(records).items()):
-        family_records = list(family_records)
-        rng.shuffle(family_records)
-        valid_records = family_records[:n_valid_per_family]
+        if "completion" in tasks:
+            rows = [
+                {
+                    "example_id": row["example_id"],
+                    "steps": complete_sequence(
+                        model,
+                        row["family"],
+                        list(row["partial_sequence"]),
+                        max_steps=max_completion_steps,
+                    ),
+                }
+                for row in inputs
+            ]
+            io.write_completion_predictions(pred_dir / "completion.csv", rows)
 
-        invalid_examples = build_rule_stratified_corruptions(
-            family_records,
-            n_invalid=n_invalid_per_family,
-            rng=rng,
+    if "anomaly" in tasks:
+        rows = [
+            {
+                "example_id": row["example_id"],
+                **predict_anomaly(
+                    model, row["family"], list(row["sequence"]), "likelihood", threshold
+                ),
+            }
+            for row in io.read_eval_input_anomaly(eval_dir / "eval_input_anomaly.csv")
+        ]
+        io.write_anomaly_predictions(pred_dir / "anomaly.csv", rows)
+
+
+def _score_prediction_files(
+    *,
+    eval_dir: Path,
+    pred_dir: Path,
+    metrics_dir: Path,
+    tasks: tuple[str, ...],
+) -> dict[str, dict]:
+    results = {}
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    for task in tasks:
+        metrics = score_task(
+            task,
+            ground_truth=_truth_path(eval_dir, task),
+            predictions=_pred_path(pred_dir, task),
+            eval_input=_eval_input_path(eval_dir, task),
         )
-        for record in valid_records:
-            example_id = f"{family}_{record.sequence_id}_ok"
-            truth[example_id] = {"is_valid": 1, "rule": None}
-            predictions[example_id] = predict_anomaly(
-                model,
-                family,
-                list(record.steps),
-                "likelihood",
-                threshold,
-            )
-            families[example_id] = family
-
-        for idx, example in enumerate(invalid_examples):
-            example_id = f"{family}_{example.sequence_id}_bad_{idx:04d}_{example.rule}"
-            truth[example_id] = {"is_valid": 0, "rule": example.rule}
-            predictions[example_id] = predict_anomaly(
-                model,
-                family,
-                list(example.steps),
-                "likelihood",
-                threshold,
-            )
-            families[example_id] = family
-
-    return score_anomaly(truth, predictions, families=families)
+        results[task] = metrics
+        (metrics_dir / f"{task}.json").write_text(
+            json.dumps(metrics, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return results
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train classic baselines and score holdout splits directly from split records.",
+        description="Train classic baselines and score fixed holdout eval CSVs.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--generated-root", default=str(PROJECT_ROOT / "data" / "generated"))
+    parser.add_argument("--eval-root", default=str(PROJECT_ROOT / "data" / "eval"))
+    parser.add_argument("--preds-root", default=str(PROJECT_ROOT / "outputs" / "preds"))
     parser.add_argument("--metrics-root", default=str(PROJECT_ROOT / "outputs" / "metrics"))
     parser.add_argument("--datasets", nargs="+", default=None)
     parser.add_argument(
@@ -186,39 +164,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--views", nargs="+", choices=_VIEWS, default=list(_VIEWS))
     parser.add_argument("--tasks", nargs="+", choices=TASKS, default=list(TASKS))
     parser.add_argument("--limit-per-family", type=int, default=None)
-    parser.add_argument(
-        "--max-eval-per-family",
-        type=int,
-        default=None,
-        help="Optional cap on records/family for next-step and completion scoring.",
-    )
-    parser.add_argument("--completion-fractions", type=float, nargs="+", default=[0.6, 0.8])
-    parser.add_argument(
-        "--val-anomaly-valid",
-        type=int,
-        default=200,
-        help="Valid sequences/family in the tuning set.",
-    )
-    parser.add_argument(
-        "--val-anomaly-invalid",
-        type=int,
-        default=129,
-        help="Invalid sequences/family in the tuning set.",
-    )
-    parser.add_argument(
-        "--eval-anomaly-valid",
-        type=int,
-        default=200,
-        help="Valid sequences/family for direct anomaly scoring.",
-    )
-    parser.add_argument(
-        "--eval-anomaly-invalid",
-        type=int,
-        default=129,
-        help="Invalid sequences/family for direct anomaly scoring.",
-    )
-    parser.add_argument("--val-seed", type=int, default=1729)
-    parser.add_argument("--eval-seed", type=int, default=1729)
+    parser.add_argument("--max-completion-steps", type=int, default=400)
     parser.add_argument("--n", type=int, default=5)
     parser.add_argument("--alpha", type=float, default=0.4)
     parser.add_argument("--seed", type=int, default=1729)
@@ -229,33 +175,27 @@ def _resolve_anomaly_threshold(
     model: Any,
     bundle: Any,
     *,
-    n_valid: int,
-    n_invalid: int,
-    seed: int,
+    calibration_dir: Path,
     tasks: tuple[str, ...],
 ) -> tuple[float, dict | None]:
     if "anomaly" not in tasks:
         return -1.0, None
 
-    result = tune_anomaly_threshold(
-        model,
-        bundle.records["valid"],
-        n_valid=n_valid,
-        n_invalid=n_invalid,
-        seed=seed,
-    )
+    if not calibration_dir.exists():
+        raise SystemExit(
+            f"Missing threshold calibration set: {calibration_dir}. "
+            "Run scripts/make_all_eval_sets.py first."
+        )
+    result = tune_anomaly_threshold_from_eval_dir(model, calibration_dir)
     record = {
-        "source": "auto",
+        "source": "threshold_calibration",
         "objective": "f1",
-        "tuned_on": "id_validation_train_families",
+        "tuned_on": str(calibration_dir),
         "train_families": list(bundle.train_families),
         "threshold": result.threshold,
         "val_f1": result.f1,
         "val_precision": result.precision,
         "val_recall": result.recall,
-        "n_valid_per_family": n_valid,
-        "n_invalid_per_family": n_invalid,
-        "seed": seed,
     }
     return result.threshold, record
 
@@ -285,10 +225,11 @@ def _write_results(
 def main() -> None:
     args = _parse_args()
     generated_root = Path(args.generated_root)
+    eval_root = Path(args.eval_root)
+    preds_root = Path(args.preds_root)
     metrics_root = Path(args.metrics_root)
     datasets = args.datasets or _discover_datasets(generated_root)
     tasks = tuple(args.tasks)
-    completion_fractions = tuple(args.completion_fractions)
 
     if not datasets:
         raise SystemExit(f"No datasets found under {generated_root}")
@@ -322,9 +263,10 @@ def main() -> None:
                 threshold, tuning = _resolve_anomaly_threshold(
                     model,
                     bundle,
-                    n_valid=args.val_anomaly_valid,
-                    n_invalid=args.val_anomaly_invalid,
-                    seed=args.val_seed,
+                    calibration_dir=eval_root
+                    / dataset
+                    / f"holdout_{holdout_family}"
+                    / "calibration",
                     tasks=tasks,
                 )
                 if tuning is not None:
@@ -335,35 +277,33 @@ def main() -> None:
                     )
 
                 for view in args.views:
-                    records = _records_for_view(bundle, view)
-                    records = _limit_records_per_family(
-                        records,
-                        args.max_eval_per_family,
-                        seed=args.eval_seed,
+                    eval_dir = eval_root / dataset / f"holdout_{holdout_family}" / view
+                    if not eval_dir.exists():
+                        raise SystemExit(
+                            f"Missing fixed eval set: {eval_dir}. "
+                            "Run scripts/make_all_eval_sets.py first."
+                        )
+                    pred_dir = (
+                        preds_root / dataset / f"holdout_{holdout_family}" / view / model_name
                     )
-                    print(f"--> evaluating {model_name} on {view}: {len(records)} records")
-
-                    results: dict[str, dict] = {}
-                    if "next_step" in tasks:
-                        results["next_step"] = _score_next_step(model, records)
-                    if "completion" in tasks:
-                        results["completion"] = _score_completion(
-                            model,
-                            records,
-                            fractions=completion_fractions,
-                        )
-                    if "anomaly" in tasks:
-                        results["anomaly"] = _score_anomaly_task(
-                            model,
-                            records,
-                            threshold=threshold,
-                            n_valid_per_family=args.eval_anomaly_valid,
-                            n_invalid_per_family=args.eval_anomaly_invalid,
-                            seed=args.eval_seed,
-                        )
-
                     metrics_dir = (
                         metrics_root / dataset / f"holdout_{holdout_family}" / view / model_name
+                    )
+                    print(f"--> evaluating {model_name} on fixed {view} set: {eval_dir}")
+                    _write_eval_predictions(
+                        model,
+                        eval_dir=eval_dir,
+                        pred_dir=pred_dir,
+                        tasks=tasks,
+                        threshold=threshold,
+                        k=5,
+                        max_completion_steps=args.max_completion_steps,
+                    )
+                    results = _score_prediction_files(
+                        eval_dir=eval_dir,
+                        pred_dir=pred_dir,
+                        metrics_dir=metrics_dir,
+                        tasks=tasks,
                     )
                     _write_results(metrics_dir, results, tuning)
                     compact = {

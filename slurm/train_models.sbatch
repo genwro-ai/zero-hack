@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-train
-#SBATCH --array=0-1
+#SBATCH --array=0-0
 #SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
@@ -18,16 +18,14 @@ set -euo pipefail
 # Slurm array job for training the next-step neural baselines.
 #
 #   task 0 -> LSTM         (zero_hack.models.lstm.train)
-#   task 1 -> Transformer  (zero_hack.models.transformer.train)
 #
 # Each task trains on the chosen dataset's train/valid/test splits, logs
-# train/val loss per epoch, and writes the next-step eval report under
-#   outputs/models/<dataset>/<model>/results.{json,md}
+# train/val loss per epoch, writes learning history, and writes the next-step
+# eval report under
+#   outputs/models/<dataset>/<model>/{history.json,results.json,results.md}
 #
-# Submit both models:
+# Submit:
 #   sbatch slurm/train_models.sbatch
-# Submit a single model (e.g. just the transformer):
-#   sbatch --array=1 slurm/train_models.sbatch
 #
 # Optional environment overrides:
 #   DATASET=valid_s005k          # which generated dataset to train on
@@ -57,7 +55,7 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 source slurm/setup_uv.sh
 
-MODELS=(lstm transformer)
+MODELS=(lstm)
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 MODEL="${MODELS[$TASK_ID]}"

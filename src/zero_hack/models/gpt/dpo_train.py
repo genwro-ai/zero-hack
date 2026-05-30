@@ -17,13 +17,13 @@ from torch.utils.data import DataLoader, Dataset
 
 from zero_hack import PROJECT_ROOT
 from zero_hack.data import FAMILY_TOKENS, Vocabulary
-from zero_hack.models.anomaly_threshold import tune_anomaly_threshold
 from zero_hack.models.common import DataBundle, count_parameters, load_split_records, pick_device
 from zero_hack.models.gpt.model import GPTConfig, GPTNextStepModel
 from zero_hack.models.gpt.train import (
     _default_views,
     _evaluate_eval_sets,
     _GPTLikelihoodAdapter,
+    _tune_threshold,
 )
 
 
@@ -199,7 +199,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--pairs", required=True)
-    parser.add_argument("--dataset", default="valid_s100k_unseen_s050k")
+    parser.add_argument("--dataset", default="valid_s100k_augmented_s050k")
     parser.add_argument("--splits-dir", required=True)
     parser.add_argument("--eval-root", default=str(PROJECT_ROOT / "data" / "eval"))
     parser.add_argument("--preds-root", default=str(PROJECT_ROOT / "outputs" / "preds"))
@@ -219,6 +219,14 @@ def parse_args() -> argparse.Namespace:
         choices=("as_given", "holdout_unknown", "all_unknown"),
         default="holdout_unknown",
     )
+    parser.add_argument(
+        "--calibration-dir",
+        default=None,
+        help=(
+            "Optional fixed eval-set directory for anomaly threshold tuning. "
+            "Defaults to <eval-root>/<dataset>/holdout_<family>/calibration."
+        ),
+    )
 
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=16)
@@ -237,9 +245,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--max-completion-steps", type=int, default=240)
-    parser.add_argument("--anomaly-val-valid", type=int, default=200)
-    parser.add_argument("--anomaly-val-invalid", type=int, default=129)
-    parser.add_argument("--anomaly-val-seed", type=int, default=1729)
     return parser.parse_args()
 
 
@@ -361,6 +366,11 @@ def main() -> None:
         )
         print(f"saved checkpoint: {checkpoint_path}")
 
+    (run_dir / "history.json").write_text(
+        json.dumps(history, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
     bundle = load_split_records(
         args.splits_dir,
         holdout_family=args.holdout_family,
@@ -375,28 +385,9 @@ def main() -> None:
     anomaly_threshold = -math.inf
     if "anomaly" in args.tasks:
         adapter = _GPTLikelihoodAdapter(policy, vocabulary, device=device)
-        threshold = tune_anomaly_threshold(
-            adapter,
-            eval_bundle.records["valid"],
-            n_valid=args.anomaly_val_valid,
-            n_invalid=args.anomaly_val_invalid,
-            seed=args.anomaly_val_seed,
-        )
-        anomaly_threshold = threshold.threshold
+        anomaly_threshold, tuning = _tune_threshold(adapter, eval_bundle, args)
         (run_dir / "anomaly_threshold.json").write_text(
-            json.dumps(
-                {
-                    "source": "auto",
-                    "objective": "f1",
-                    "threshold": threshold.threshold,
-                    "val_f1": threshold.f1,
-                    "val_precision": threshold.precision,
-                    "val_recall": threshold.recall,
-                    "seed": args.anomaly_val_seed,
-                },
-                indent=2,
-            )
-            + "\n",
+            json.dumps(tuning, indent=2) + "\n",
             encoding="utf-8",
         )
 

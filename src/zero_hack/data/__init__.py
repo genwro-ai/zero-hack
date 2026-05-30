@@ -26,6 +26,11 @@ from zero_hack.data.eval_datasets import (
     make_eval_next_step_loader,
     make_holdout_eval_next_step_loaders,
 )
+from zero_hack.data.industrial_eval import (
+    load_industrial_variant_records,
+    write_industrial_eval_set,
+    write_threshold_calibration_set,
+)
 
 __all__ = [
     "FAMILY_FILE_NAMES",
@@ -42,6 +47,7 @@ __all__ = [
     "dedupe_records",
     "load_eval_next_step_records",
     "load_industrial_family_records",
+    "load_industrial_variant_records",
     "load_raw_family_records",
     "load_sequence_records",
     "make_torch_dataloader",
@@ -52,4 +58,6 @@ __all__ = [
     "normalize_family",
     "split_records",
     "write_sequence_records",
+    "write_industrial_eval_set",
+    "write_threshold_calibration_set",
 ]

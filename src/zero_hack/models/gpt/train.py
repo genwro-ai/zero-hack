@@ -27,11 +27,10 @@ from zero_hack.data import (
 from zero_hack.eval import io
 from zero_hack.eval.score import score_task
 from zero_hack.eval.validator import first_violated_rule
-from zero_hack.models.anomaly_threshold import tune_anomaly_threshold
+from zero_hack.models.anomaly_threshold import tune_anomaly_threshold_from_eval_dir
 from zero_hack.models.common import (
     DataBundle,
     count_parameters,
-    evaluate_and_report,
     evaluate_model,
     load_split_records,
     pick_device,
@@ -66,7 +65,7 @@ def _load_augmentation_records(
 ) -> list[SequenceRecord]:
     """Load long-form generated records for train-only augmentation.
 
-    ``scripts/generate_unseen_data.py`` intentionally emits synthetic and UNK
+    ``scripts/generate_augmented_sequences.py`` intentionally emits synthetic and UNK
     labels. The GPT data loader only has three known family tokens plus an
     unknown token, so the default maps every augmentation row to ``unknown``.
     """
@@ -652,6 +651,36 @@ def _evaluate_eval_sets(
     return all_results
 
 
+def _resolve_calibration_dir(args: argparse.Namespace) -> Path | None:
+    if args.calibration_dir:
+        return Path(args.calibration_dir)
+    return Path(args.eval_root) / args.dataset / f"holdout_{args.holdout_family}" / "calibration"
+
+
+def _tune_threshold(
+    adapter: _GPTLikelihoodAdapter,
+    bundle: DataBundle,
+    args: argparse.Namespace,
+) -> tuple[float, dict[str, Any]]:
+    calibration_dir = _resolve_calibration_dir(args)
+    if calibration_dir is None or not calibration_dir.exists():
+        raise FileNotFoundError(
+            f"Missing threshold calibration set: {calibration_dir}. "
+            "Run scripts/make_all_eval_sets.py first."
+        )
+    threshold_result = tune_anomaly_threshold_from_eval_dir(adapter, calibration_dir)
+    return threshold_result.threshold, {
+        "source": "threshold_calibration",
+        "objective": "f1",
+        "tuned_on": str(calibration_dir),
+        "train_families": list(bundle.train_families),
+        "threshold": threshold_result.threshold,
+        "val_f1": threshold_result.f1,
+        "val_precision": threshold_result.precision,
+        "val_recall": threshold_result.recall,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="valid_s005k")
@@ -677,6 +706,14 @@ def parse_args() -> argparse.Namespace:
         choices=EVAL_FAMILY_MODES,
         default="holdout_unknown",
         help="Map held-out-family eval prompts to <FAMILY_UNKNOWN> by default.",
+    )
+    parser.add_argument(
+        "--calibration-dir",
+        default=None,
+        help=(
+            "Optional fixed eval-set directory for anomaly threshold tuning. "
+            "Defaults to <eval-root>/<dataset>/holdout_<family>/calibration."
+        ),
     )
     parser.add_argument("--augment-train-csv", default=None)
     parser.add_argument("--augment-limit", type=int, default=None)
@@ -704,9 +741,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--phase-loss-weight", type=float, default=0.0)
     parser.add_argument("--family-dropout", type=float, default=0.0)
     parser.add_argument("--step-dropout", type=float, default=0.0)
-    parser.add_argument("--anomaly-val-valid", type=int, default=200)
-    parser.add_argument("--anomaly-val-invalid", type=int, default=129)
-    parser.add_argument("--anomaly-val-seed", type=int, default=1729)
+    parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--max-completion-steps", type=int, default=240)
 
     parser.add_argument("--d-model", type=int, default=128)
@@ -738,7 +773,7 @@ def main() -> None:
             args.augment_train_csv,
             family_mode=args.augment_family_mode,
             limit=args.augment_limit,
-            seed=args.anomaly_val_seed,
+            seed=args.seed,
         )
         bundle = _augment_training_records(bundle, augmentation)
         print(
@@ -876,49 +911,17 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state"])
     print(f"loaded best epoch={checkpoint['epoch']} valid_loss={checkpoint['valid_loss']:.4f}")
 
-    report_dir = Path(args.metrics_root) / args.dataset
-    evaluate_and_report(
-        model,
-        loaders,
-        bundle,
-        model_name=run_name,
-        device=device,
-        k=args.k,
-        max_eval_batches=args.max_eval_batches,
-        report_dir=report_dir,
-    )
-
     anomaly_threshold = -math.inf
     if "anomaly" in args.tasks:
         adapter = _GPTLikelihoodAdapter(model, bundle.vocabulary, device=device)
-        threshold_result = tune_anomaly_threshold(
-            adapter,
-            bundle.records["valid"],
-            n_valid=args.anomaly_val_valid,
-            n_invalid=args.anomaly_val_invalid,
-            seed=args.anomaly_val_seed,
-        )
-        anomaly_threshold = threshold_result.threshold
-        tuning = {
-            "source": "auto",
-            "objective": "f1",
-            "tuned_on": "id_validation_train_families",
-            "train_families": list(bundle.train_families),
-            "threshold": threshold_result.threshold,
-            "val_f1": threshold_result.f1,
-            "val_precision": threshold_result.precision,
-            "val_recall": threshold_result.recall,
-            "n_valid": args.anomaly_val_valid,
-            "n_invalid": args.anomaly_val_invalid,
-            "seed": args.anomaly_val_seed,
-        }
+        anomaly_threshold, tuning = _tune_threshold(adapter, bundle, args)
         (run_dir / "anomaly_threshold.json").write_text(
             json.dumps(tuning, indent=2) + "\n",
             encoding="utf-8",
         )
         print(
-            f"tuned anomaly threshold={threshold_result.threshold:.4f} "
-            f"val_f1={threshold_result.f1:.4f}"
+            f"tuned anomaly threshold={tuning['threshold']:.4f} "
+            f"val_f1={tuning['val_f1']:.4f} source={tuning['source']}"
         )
 
     views = args.eval_views or _default_views(

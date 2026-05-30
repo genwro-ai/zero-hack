@@ -37,12 +37,12 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 source slurm/setup_uv.sh
 
 DATASET="${DATASET:-valid_s100k}"
-UNSEEN_DATASET="${UNSEEN_DATASET:-unseen_s050k}"
-RUN_DATASET="${RUN_DATASET:-${DATASET}_unseen_s050k}"
+AUGMENT_DATASET="${AUGMENT_DATASET:-augmented_s050k}"
+RUN_DATASET="${RUN_DATASET:-${DATASET}_augmented_s050k}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
 DPO_ROOT="${DPO_ROOT:-data/generated/dpo_pairs}"
-SLURM_OUTPUT_ROOT="${SLURM_OUTPUT_ROOT:-outputs/slurm_runs}"
+SLURM_OUTPUT_ROOT="${SLURM_OUTPUT_ROOT:-outputs}"
 RUNNER="${RUNNER:-srun}"
 
 HOLDOUTS=(mosfet igbt ic)
@@ -53,7 +53,7 @@ SFT_METHOD_NAME="${SFT_METHOD_NAME:-gpt_phase_augmented}"
 DPO_METHOD_NAME="${DPO_METHOD_NAME:-gpt_dpo}"
 CHECKPOINT="${CHECKPOINT:-$SLURM_OUTPUT_ROOT/models/$RUN_DATASET/${SFT_METHOD_NAME}_holdout_$HOLDOUT_FAMILY/best.pt}"
 SPLITS_DIR="$GENERATED_ROOT/$DATASET/splits"
-UNSEEN_CSV="$GENERATED_ROOT/$UNSEEN_DATASET/raw.csv"
+AUGMENT_CSV="$GENERATED_ROOT/$AUGMENT_DATASET/raw.csv"
 PAIRS_PATH="${PAIRS_PATH:-$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs.jsonl}"
 PAIRS="${PAIRS:-100000}"
 
@@ -79,7 +79,7 @@ if [[ ! -s "$PAIRS_PATH" || "${FORCE_DPO_PAIRS:-0}" == "1" ]]; then
   time "$RUNNER" uv run python scripts/generate_dpo_pairs.py \
     --splits-dir "$SPLITS_DIR" \
     --holdout-family "$HOLDOUT_FAMILY" \
-    --augment-train-csv "$UNSEEN_CSV" \
+    --augment-train-csv "$AUGMENT_CSV" \
     --augment-family-mode unknown \
     --pairs "$PAIRS" \
     --out "$PAIRS_PATH" \

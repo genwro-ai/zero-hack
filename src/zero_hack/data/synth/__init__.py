@@ -1,13 +1,3 @@
-"""Neurosymbolic process-sequence data generator.
-
-Validity is baked in via a precondition-aware planner (see design doc
-``docs/superpowers/specs/2026-05-30-neurosymbolic-sequence-generator-design.md``):
-coherent process *units* are assembled in the official phase backbone, and any
-local rule whose precondition is unmet is satisfied by injecting a minimal
-connector before the triggering step. The official ``validate_sequence`` runs as
-a backstop only.
-"""
-
 from zero_hack.data.synth.generator import (
     SynthSequence,
     generate_dataset,

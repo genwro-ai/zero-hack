@@ -198,12 +198,14 @@ def train_model(
     config: TrainConfig,
     device: torch.device,
     pad_id: int = 0,
+    history_path: str | Path | None = None,
 ) -> nn.Module:
     model.to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.lr, weight_decay=config.weight_decay
     )
     criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
+    history: list[dict] = []
 
     for epoch in range(config.epochs):
         model.train()
@@ -229,8 +231,16 @@ def train_model(
                 print(f"epoch {epoch + 1} step {step + 1} loss {running / seen:.4f}")
 
         avg = running / max(seen, 1)
+        row: dict = {"epoch": epoch + 1, "train_loss": round(avg, 6)}
         print(f"epoch {epoch + 1} done | train loss {avg:.4f}")
         if "valid" in loaders:
+            valid_loss = evaluate_loss(
+                model,
+                loaders["valid"],
+                criterion=criterion,
+                device=device,
+                max_batches=config.max_eval_batches,
+            )
             summary = evaluate_model(
                 model,
                 loaders["valid"],
@@ -238,8 +248,42 @@ def train_model(
                 k=config.k,
                 max_batches=config.max_eval_batches,
             )
+            row["valid_loss"] = round(valid_loss, 6)
+            row["valid_topk"] = summary["all"]
             print(f"epoch {epoch + 1} valid {summary['all']}")
+        history.append(row)
+
+    if history_path is not None:
+        path = Path(history_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(history, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {path}")
     return model
+
+
+@torch.no_grad()
+def evaluate_loss(
+    model: nn.Module,
+    loader: DataLoader,
+    *,
+    criterion: nn.Module,
+    device: torch.device,
+    max_batches: int | None = None,
+) -> float:
+    model.eval()
+    total = 0.0
+    seen = 0
+    for step, batch in enumerate(loader):
+        if max_batches is not None and step >= max_batches:
+            break
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        target = batch["target_id"].to(device)
+        logits = model(input_ids, attention_mask)
+        loss = criterion(logits, target)
+        total += float(loss.item())
+        seen += 1
+    return total / max(1, seen)
 
 
 @torch.no_grad()

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Create train/valid/test splits for all generated dataset sizes.
 
-DATASETS="${DATASETS:-valid_s005k valid_s010k valid_s020k valid_s100k valid_s500k valid_s1000k}"
+DATASETS="${DATASETS:-valid_s005k valid_s010k valid_s020k valid_s100k}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 INDUSTRIAL_DIR="${INDUSTRIAL_DIR:-data/industrial}"
 INCLUDE_INDUSTRIAL="${INCLUDE_INDUSTRIAL:-1}"

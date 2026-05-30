@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-split
-#SBATCH --array=0-5
+#SBATCH --array=0-3
 #SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
@@ -54,8 +54,6 @@ DATASETS=(
   valid_s010k
   valid_s020k
   valid_s100k
-  valid_s500k
-  valid_s1000k
 )
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"

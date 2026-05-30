@@ -17,15 +17,13 @@ from zero_hack.eval.score import score_task
 from zero_hack.models.common import (
     DataBundle,
     count_parameters,
-    evaluate_and_report,
     evaluate_model,
     load_split_records,
     pick_device,
 )
 from zero_hack.models.gpt import GPTConfig, GPTNextStepModel
-from zero_hack.models.transformer.model import TransformerConfig, TransformerModel
 
-ARCHITECTURES = ("transformer", "gpt")
+ARCHITECTURES = ("gpt",)
 
 
 def _collate_right_padded(batch: list[dict[str, Any]], pad_id: int) -> dict[str, Any]:
@@ -88,17 +86,6 @@ def _build_model(
             max_context=args.max_context,
         )
         return GPTNextStepModel(vocab_size, config, pad_id=bundle.vocabulary.pad_id), config
-
-    if architecture == "transformer":
-        config = TransformerConfig(
-            d_model=args.d_model,
-            nhead=args.nhead,
-            num_layers=args.num_layers or 2,
-            dim_feedforward=args.dim_feedforward or 256,
-            dropout=args.dropout,
-            max_context=args.max_context,
-        )
-        return TransformerModel(vocab_size, config, pad_id=bundle.vocabulary.pad_id), config
 
     raise ValueError(f"Unknown architecture: {architecture}")
 
@@ -450,17 +437,6 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state"])
     print(f"loaded best epoch={checkpoint['epoch']} valid_loss={checkpoint['valid_loss']:.4f}")
 
-    report_dir = Path(args.metrics_root) / args.dataset
-    evaluate_and_report(
-        model,
-        loaders,
-        bundle,
-        model_name=run_name,
-        device=device,
-        k=args.k,
-        max_eval_batches=args.max_eval_batches,
-        report_dir=report_dir,
-    )
     eval_set_results = _write_eval_set_next_step(
         model,
         bundle,

@@ -1,4 +1,4 @@
-"""Generate unseen process sequences for training.
+"""Generate rule-valid augmentation sequences for training.
 
 Produces rule-valid sequences that reach beyond the three reference families:
 every documented vocabulary token is exercised, family labels are decoupled from
@@ -9,8 +9,8 @@ coverage. See
 ``docs/superpowers/specs/2026-05-30-neurosymbolic-sequence-generator-design.md``.
 
 Usage:
-    uv run python scripts/generate_unseen_data.py --count 10000
-    uv run python scripts/generate_unseen_data.py --count 2000 --dataset unseen_v1
+    uv run python scripts/generate_augmented_sequences.py --count 10000
+    uv run python scripts/generate_augmented_sequences.py --count 2000 --dataset augmented_v1
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ DEFAULT_OUT_ROOT = PROJECT_ROOT / "data" / "generated"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--count", type=int, default=10_000, help="Number of sequences.")
-    parser.add_argument("--dataset", default="unseen", help="Dataset name (sub-directory).")
+    parser.add_argument("--dataset", default="augmented", help="Dataset name (sub-directory).")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--synthetic-families", type=int, default=12)
     parser.add_argument("--unk-prob", type=float, default=0.25)

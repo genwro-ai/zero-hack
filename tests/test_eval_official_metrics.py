@@ -1,8 +1,6 @@
 import pytest
 
-from zero_hack.eval.anomaly import score_anomaly
-from zero_hack.eval.completion import score_completion
-from zero_hack.eval.score import score_task
+from zero_hack.eval.score import score_anomaly, score_completion, score_task
 
 
 def test_completion_uses_official_token_accuracy_denominator():

@@ -1,131 +1,113 @@
 #!/usr/bin/env python3
 import argparse
-import re
-import subprocess
-import sys
 from pathlib import Path
 
 from zero_hack import PROJECT_ROOT
+from zero_hack.data.industrial_eval import (
+    FAMILIES,
+    load_industrial_variant_records,
+    records_by_family,
+    write_industrial_eval_set,
+    write_threshold_calibration_set,
+)
 
-_DATASET_SIZE = re.compile(r"_s(\d+)k$")
-
-
-def _dataset_sort_key(name: str) -> tuple[int, str]:
-    match = _DATASET_SIZE.search(name)
-    if match:
-        return int(match.group(1)), name
-    return sys.maxsize, name
-
-
-def _discover_datasets(generated_root: Path) -> list[str]:
-    datasets = []
-    for path in generated_root.iterdir():
-        if not path.is_dir():
-            continue
-        splits_dir = path / "splits"
-        if (splits_dir / "test.csv").exists():
-            datasets.append(path.name)
-    return sorted(datasets, key=_dataset_sort_key)
+_CALIBRATION_VIEW = "calibration"
+_CALIBRATION_HEALTHY = 650
+_CALIBRATION_UNHEALTHY = 350
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Create eval sets for each generated dataset and each two-family-train "
-            "holdout combination."
-        )
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--generated-root",
-        default=str(PROJECT_ROOT / "data" / "generated"),
-        help="Root containing dataset directories such as valid_s005k.",
+        "--industrial-dir",
+        default=str(PROJECT_ROOT / "data" / "industrial"),
+        help="Directory containing *_variants.csv.",
     )
     parser.add_argument(
         "--datasets",
         nargs="+",
-        default=None,
-        help="Dataset labels to process. Defaults to all discovered datasets.",
+        required=True,
+        help="Output dataset labels to materialize under data/eval.",
     )
-    parser.add_argument(
-        "--out-root",
-        default=str(PROJECT_ROOT / "data" / "eval"),
-        help=(
-            "Parent output directory. Eval sets are written as <dataset>/holdout_<family>/{id,ood}."
-        ),
-    )
-    parser.add_argument("--n-valid", type=int, default=100)
-    parser.add_argument("--n-anomaly-valid", type=int, default=200)
-    parser.add_argument("--n-anomaly-invalid", type=int, default=129)
+    parser.add_argument("--out-root", default=str(PROJECT_ROOT / "data" / "eval"))
     parser.add_argument("--fractions", type=float, nargs="+", default=[0.6, 0.8])
     parser.add_argument("--seed", type=int, default=1729)
-    parser.add_argument("--split", default="test", choices=("train", "valid", "test"))
-    parser.add_argument("--limit-per-family", type=int, default=None)
     parser.add_argument(
         "--holdout-families",
         nargs="+",
-        choices=("mosfet", "igbt", "ic"),
-        default=["mosfet", "igbt", "ic"],
-        help="Holdout combinations to build. Default: all three families.",
+        choices=FAMILIES,
+        default=list(FAMILIES),
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print commands without running them.",
-    )
+    parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    generated_root = Path(args.generated_root)
     out_root = Path(args.out_root)
-    datasets = args.datasets or _discover_datasets(generated_root)
+    industrial_dir = Path(args.industrial_dir)
 
-    if not datasets:
-        raise SystemExit(f"No datasets found under {generated_root}")
+    variants = load_industrial_variant_records(industrial_dir)
+    variant_by_family = records_by_family(variants)
 
-    script = PROJECT_ROOT / "scripts" / "make_eval_set.py"
-    for dataset in datasets:
-        splits_dir = generated_root / dataset / "splits"
-        if not splits_dir.exists():
-            raise SystemExit(f"Missing split directory for {dataset}: {splits_dir}")
-
+    for dataset in args.datasets:
         for holdout_family in args.holdout_families:
-            eval_views = {
-                "id": [family for family in ("mosfet", "igbt", "ic") if family != holdout_family],
-                "ood": [holdout_family],
+            train_families = tuple(family for family in FAMILIES if family != holdout_family)
+            views = {
+                "id": train_families,
+                "ood": (holdout_family,),
             }
-            for view_name, eval_families in eval_views.items():
-                cmd = [
-                    sys.executable,
-                    str(script),
-                    "--splits-dir",
-                    str(splits_dir),
-                    "--out-dir",
-                    str(out_root / dataset / f"holdout_{holdout_family}" / view_name),
-                    "--holdout-family",
-                    holdout_family,
-                    "--eval-families",
-                    *eval_families,
-                    "--n-valid",
-                    str(args.n_valid),
-                    "--n-anomaly-valid",
-                    str(args.n_anomaly_valid),
-                    "--n-anomaly-invalid",
-                    str(args.n_anomaly_invalid),
-                    "--seed",
-                    str(args.seed),
-                    "--split",
-                    args.split,
-                    "--fractions",
-                    *[str(value) for value in args.fractions],
-                ]
-                if args.limit_per_family is not None:
-                    cmd.extend(["--limit-per-family", str(args.limit_per_family)])
 
-                print(" ".join(cmd), flush=True)
-                if not args.dry_run:
-                    subprocess.run(cmd, check=True)
+            for view, families in views.items():
+                out_dir = out_root / dataset / f"holdout_{holdout_family}" / view
+                valid_records = [
+                    record for family in families for record in variant_by_family.get(family, [])
+                ]
+                print(
+                    f"{out_dir}: source=industrial_variants "
+                    f"anomaly=generated_rule_cases families={','.join(families)} "
+                    f"valid={len(valid_records)}"
+                )
+                if args.dry_run:
+                    continue
+                write_industrial_eval_set(
+                    out_dir,
+                    valid_records=valid_records,
+                    fractions=tuple(args.fractions),
+                    seed=args.seed,
+                    metadata={
+                        "dataset_label": dataset,
+                        "holdout_family": holdout_family,
+                        "train_families": list(train_families),
+                        "view": view,
+                    },
+                )
+
+            calibration_dir = out_root / dataset / f"holdout_{holdout_family}" / _CALIBRATION_VIEW
+            calibration_valid = [
+                record for family in train_families for record in variant_by_family.get(family, [])
+            ]
+            print(
+                f"{calibration_dir}: source=industrial_variants "
+                f"anomaly=generated_rule_cases "
+                f"families={','.join(train_families)} "
+                f"threshold_calibration={_CALIBRATION_HEALTHY}+{_CALIBRATION_UNHEALTHY}"
+            )
+            if args.dry_run:
+                continue
+            write_threshold_calibration_set(
+                calibration_dir,
+                valid_records=calibration_valid,
+                n_valid=_CALIBRATION_HEALTHY,
+                n_invalid=_CALIBRATION_UNHEALTHY,
+                seed=args.seed,
+                metadata={
+                    "dataset_label": dataset,
+                    "holdout_family": holdout_family,
+                    "train_families": list(train_families),
+                    "view": _CALIBRATION_VIEW,
+                },
+            )
 
 
 if __name__ == "__main__":

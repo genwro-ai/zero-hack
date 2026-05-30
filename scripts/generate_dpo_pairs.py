@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Generate GPT DPO preference pairs for process-sequence fine-tuning."""
-
-from __future__ import annotations
-
 import argparse
 import json
 import random
@@ -67,9 +63,6 @@ def _valid_mismatch_suffix(
     for other in candidates[:max_tries]:
         if other.sequence_id == record.sequence_id or len(other.steps) <= cut + 1:
             continue
-        # Keep the same prompt but splice in another valid sequence's tail. If
-        # the official validator still accepts it, this becomes a useful
-        # "valid but off-manifold" contrast rather than a trivial rule break.
         rejected = list(other.steps[cut:])
         full = prefix + rejected
         if rejected and tuple(full) != record.steps and is_valid(full):
