@@ -165,6 +165,47 @@
     }
   }
 
+  function renderArch() {
+    const el = $("arch-table"); if (!el) return; clear(el);
+    const rows = ZH.archCompare;
+    const cols = [
+      { key: "id_ns",  label: "ID Top-1",  ood: false, higher: true },
+      { key: "ood_ns", label: "OOD Top-1", ood: true,  higher: true },
+      { key: "id_cp",  label: "ID Compl.", ood: false, higher: true },
+      { key: "ood_cp", label: "OOD Compl.",ood: true,  higher: true },
+      { key: "id_auc", label: "ID AUC",    ood: false, higher: true },
+      { key: "ood_auc",label: "OOD AUC",   ood: true,  higher: true },
+    ];
+    const bests = {};
+    cols.forEach((c) => {
+      let best = null;
+      rows.forEach((r) => { if (best === null || (c.higher ? r[c.key] > best : r[c.key] < best)) best = r[c.key]; });
+      bests[c.key] = best;
+    });
+    const tbl = C.h("table", { class: "arch-tbl" });
+    const thead = C.h("thead"); const hr = C.h("tr");
+    hr.appendChild(C.h("th", null, "Model"));
+    hr.appendChild(C.h("th", null, "Pos."));
+    cols.forEach((c) => { const th = C.h("th", { class: c.ood ? "ood-col" : "" }, c.label); hr.appendChild(th); });
+    thead.appendChild(hr); tbl.appendChild(thead);
+    const tbody = C.h("tbody");
+    rows.forEach((r) => {
+      const tr = C.h("tr", { class: r.selected ? "arch-selected" : "" });
+      tr.appendChild(C.h("td", { class: "arch-name" + (r.selected ? " sel" : "") }, r.label + (r.selected ? " ★" : "")));
+      tr.appendChild(C.h("td", { class: "arch-pos" }, r.pos));
+      cols.forEach((c) => {
+        const isBest = r[c.key] === bests[c.key];
+        const td = C.h("td", { class: (c.ood ? "ood-col" : "") + (isBest ? " best-cell" : "") }, r[c.key].toFixed(3));
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    el.appendChild(tbl);
+    const note = C.h("div", { class: "p-note", style: "margin-top:10px" }, "★ selected architecture · OOD = held-out device families · completion metric: token accuracy");
+    el.appendChild(note);
+  }
+
   function init() {
     if (ZH.meta && ZH.meta.placeholder === false) { const b = $("placeholder-badge"); if (b) b.style.display = "none"; }
     renderHero();
@@ -172,6 +213,7 @@
     renderNextStep();
     renderCompletion();
     renderAnomaly();
+    renderArch();
     renderExamples();
 
     const io = new IntersectionObserver((entries) => {

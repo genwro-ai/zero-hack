@@ -62,6 +62,14 @@
     },
   };
 
+  const archCompare = [
+    { id: "gpt_abs",   label: "GPT-absolute",    pos: "absolute",  selected: false, id_ns: 0.675, ood_ns: 0.660, id_cp: 0.965, ood_cp: 0.799, id_auc: 1.000, ood_auc: 0.433 },
+    { id: "gpt_alibi", label: "GPT-ALiBi",        pos: "ALiBi",     selected: true,  id_ns: 0.652, ood_ns: 0.635, id_cp: 0.963, ood_cp: 0.806, id_auc: 0.999, ood_auc: 0.680 },
+    { id: "gpt_llama", label: "GPT-LLaMA-style",  pos: "RoPE",      selected: false, id_ns: 0.681, ood_ns: 0.672, id_cp: 0.964, ood_cp: 0.756, id_auc: 1.000, ood_auc: 0.650 },
+    { id: "gpt_rope",  label: "GPT-RoPE",         pos: "RoPE",      selected: false, id_ns: 0.675, ood_ns: 0.600, id_cp: 0.961, ood_cp: 0.791, id_auc: 1.000, ood_auc: 0.612 },
+    { id: "causal",    label: "Causal transformer",pos: "absolute",  selected: false, id_ns: 0.681, ood_ns: 0.633, id_cp: 0.963, ood_cp: 0.759, id_auc: 1.000, ood_auc: 0.773 },
+  ];
+
   window.ZH = {
     meta: {
       title: "Zero-Hack · Industrial Process-Logic Benchmark",
@@ -81,5 +89,6 @@
     methods: methods,
     flow: flow,
     examples: examples,
+    archCompare: archCompare,
   };
 })();
