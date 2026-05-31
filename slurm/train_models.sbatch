@@ -12,6 +12,9 @@
 #SBATCH --time=4:00:00 # Time limit in HH:MM:SS, up to 24:00:00
 #SBATCH --output=outputs/slurm/%x_%A_%a.out
 #SBATCH --error=outputs/slurm/%x_%A_%a.err
+# Array job: END emails arrive per task; change to FAIL to reduce volume.
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=lukasz.lenkiewicz28@gmail.com
 
 set -euo pipefail
 

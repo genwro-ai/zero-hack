@@ -11,6 +11,8 @@
 #SBATCH --time=0:10:00 # Short diagnostic job
 #SBATCH --output=outputs/slurm/%x_%j.out
 #SBATCH --error=outputs/slurm/%x_%j.err
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=lukasz.lenkiewicz28@gmail.com
 
 set -euo pipefail
 

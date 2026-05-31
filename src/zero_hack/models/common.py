@@ -54,6 +54,7 @@ def load_split_records(
     families: tuple[str, ...] = FAMILIES,
     holdout_family: str | None = None,
     limit_per_family: int | None = None,
+    holdout_in_vocab: bool = True,
 ) -> DataBundle:
     splits_dir = Path(splits_dir)
     families = tuple(family.lower() for family in families)
@@ -78,7 +79,17 @@ def load_split_records(
             limit_per_family,
         )
 
-    vocabulary = build_vocabulary(by_split["train"])
+    # In a leave-one-family-out run the held-out family is excluded from the
+    # training records, so its unique steps would otherwise be absent from the
+    # vocabulary and collapse to <UNK_STEP> at eval time - making the OOD
+    # next-step / completion / anomaly metrics meaningless. Borrow the held-out
+    # family's *token inventory* (never its sequences for weight training) so the
+    # model can at least represent it. Disable with holdout_in_vocab=False for a
+    # strict "unknown alphabet" stress test.
+    vocab_records = list(by_split["train"])
+    if holdout_family is not None and holdout_in_vocab:
+        vocab_records.extend(by_split[family_test_split(holdout_family)])
+    vocabulary = build_vocabulary(vocab_records)
     return DataBundle(
         vocabulary=vocabulary,
         records=by_split,
@@ -108,11 +119,17 @@ def make_dataset(
     split: str,
     *,
     max_context: int = 192,
+    family_dropout: float = 0.0,
 ) -> NextStepDataset:
+    # Family-token dropout is a training-only augmentation: only the "train"
+    # split ever sees p>0 so valid/test/per-family splits stay deterministic and
+    # always condition on the true family token.
+    dropout = family_dropout if split == "train" else 0.0
     return NextStepDataset(
         records=bundle.records[split],
         vocabulary=bundle.vocabulary,
         max_context=max_context,
+        family_dropout=dropout,
     )
 
 
@@ -122,10 +139,16 @@ def make_loaders(
     batch_size: int = 128,
     max_context: int = 192,
     num_workers: int = 0,
+    family_dropout: float = 0.0,
 ) -> dict[str, DataLoader]:
     loaders: dict[str, DataLoader] = {}
     for split in bundle.records:
-        dataset = make_dataset(bundle, split, max_context=max_context)
+        dataset = make_dataset(
+            bundle,
+            split,
+            max_context=max_context,
+            family_dropout=family_dropout,
+        )
         loaders[split] = make_torch_dataloader(
             dataset,
             batch_size=batch_size,
@@ -161,6 +184,11 @@ class TrainConfig:
     max_eval_batches: int | None = None
     log_every: int = 50
     k: int = 5
+    # Scheduled sampling (see zero_hack.models.scheduled_sampling). Ignored by
+    # the default teacher-forcing `train_model`.
+    scheduled_sampling: bool = False
+    ss_max_prob: float = 0.25
+    ss_schedule: str = "linear"
 
 
 def train_model(

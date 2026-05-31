@@ -38,4 +38,17 @@ EOF
 fi
 
 uv --version
-uv sync --python 3.12
+
+# Where the dependency download happens matters: Leonardo compute nodes have no
+# outbound internet, so a `uv sync` that needs to fetch a wheel times out there.
+# Inside a Slurm job we install from the local cache only and skip the dev group.
+# On a login node we allow the network so the cache can be populated.
+#
+# One-time prep on a LOGIN node before submitting jobs:
+#   cd "$repo" && bash slurm/setup_uv.sh
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  export UV_OFFLINE=1
+  uv sync --python 3.12 --frozen --no-dev
+else
+  uv sync --python 3.12
+fi

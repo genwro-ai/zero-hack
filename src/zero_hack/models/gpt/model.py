@@ -104,14 +104,20 @@ class GPTNextStepModel(nn.Module):
             hidden = block(hidden, attn_mask)
         return self.ln_f(hidden), attention_mask
 
+    def forward_all(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """Return next-token logits for every input position."""
+        hidden, _ = self._hidden(input_ids, attention_mask)
+        return self.head(hidden)
+
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        hidden, attention_mask = self._hidden(input_ids, attention_mask)
+        logits = self.forward_all(input_ids, attention_mask)
+        if input_ids.shape[1] > self.config.max_context:
+            attention_mask = attention_mask[:, -self.config.max_context :]
         last_valid = attention_mask.long().sum(dim=1).clamp_min(1) - 1
-        batch_idx = torch.arange(hidden.size(0), device=hidden.device)
-        return self.head(hidden[batch_idx, last_valid, :])
+        batch_idx = torch.arange(logits.size(0), device=logits.device)
+        return logits[batch_idx, last_valid, :]
 
     def sequence_logits(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor
     ) -> torch.Tensor:
-        hidden, _ = self._hidden(input_ids, attention_mask)
-        return self.head(hidden)
+        return self.forward_all(input_ids, attention_mask)

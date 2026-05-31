@@ -53,13 +53,17 @@ def _make_loaders(
     *,
     batch_size: int,
     max_context: int,
+    family_dropout: float = 0.0,
 ) -> dict[str, DataLoader]:
     loaders = {}
     for split, records in bundle.records.items():
+        # Family-token dropout is training-only; valid/test/per-family splits
+        # always condition on the true family token.
         dataset = NextStepDataset(
             records=records,
             vocabulary=bundle.vocabulary,
             max_context=max_context,
+            family_dropout=family_dropout if split == "train" else 0.0,
         )
         loaders[split] = DataLoader(
             dataset,
@@ -319,6 +323,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-eval-batches", type=int, default=None)
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
+    parser.add_argument(
+        "--family-dropout",
+        type=float,
+        default=0.0,
+        help=(
+            "Probability of replacing the family conditioning token with "
+            "<FAMILY_UNKNOWN> on the train split, so the model learns a "
+            "family-agnostic mode for OOD/unknown-family eval. 0.0 disables it."
+        ),
+    )
 
     parser.add_argument("--d-model", type=int, default=128)
     parser.add_argument("--nhead", type=int, default=4)
@@ -351,6 +365,7 @@ def main() -> None:
         bundle,
         batch_size=args.batch_size,
         max_context=args.max_context,
+        family_dropout=args.family_dropout,
     )
     model, model_config = _build_model(args.model, bundle, args)
     print(f"config={asdict(model_config)}")

@@ -1,27 +1,16 @@
-def _roc_auc(scores: list[float], labels: list[int]) -> float | None:
-    """AUC for ``score`` predicting ``label==1`` via the rank estimator.
+def _roc_auc(labels: list[int], scores: list[float]) -> float | None:
+    """Official pairwise ROC-AUC.
 
-    Returns ``None`` if either class is empty. Ties get averaged ranks.
+    ``labels`` use 1 = valid, 0 = invalid; ``scores`` are higher for valid.
     """
-    n_pos = sum(labels)
-    n_neg = len(labels) - n_pos
-    if n_pos == 0 or n_neg == 0:
+
+    pos_scores = [score for score, label in zip(scores, labels, strict=False) if label == 1]
+    neg_scores = [score for score, label in zip(scores, labels, strict=False) if label == 0]
+    if not pos_scores or not neg_scores:
         return None
-
-    order = sorted(range(len(scores)), key=lambda i: scores[i])
-    ranks = [0.0] * len(scores)
-    i = 0
-    while i < len(order):
-        j = i
-        while j + 1 < len(order) and scores[order[j + 1]] == scores[order[i]]:
-            j += 1
-        avg_rank = (i + j) / 2.0 + 1.0  # ranks are 1-based
-        for k in range(i, j + 1):
-            ranks[order[k]] = avg_rank
-        i = j + 1
-
-    sum_pos_ranks = sum(ranks[i] for i in range(len(labels)) if labels[i] == 1)
-    auc = (sum_pos_ranks - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
+    concordant = sum(pos > neg for pos in pos_scores for neg in neg_scores)
+    tied = sum(pos == neg for pos in pos_scores for neg in neg_scores)
+    auc = (concordant + 0.5 * tied) / (len(pos_scores) * len(neg_scores))
     return round(auc, 4)
 
 
@@ -54,8 +43,8 @@ def _score_anomaly_ids(
     predictions: dict[str, dict],
 ) -> dict:
     tp = fp = tn = fn = 0  # positive class = anomaly (invalid)
-    auc_scores: list[float] = []
     auc_labels: list[int] = []
+    auc_scores: list[float] = []
     attributable = 0
     attributed_correct = 0
 
@@ -75,8 +64,8 @@ def _score_anomaly_ids(
             fn += 1
 
         if pred.get("score") is not None:
-            auc_scores.append(1.0 - float(pred["score"]))  # P(anomaly)
-            auc_labels.append(1 if gold_anomaly else 0)
+            auc_labels.append(int(gold["is_valid"]))
+            auc_scores.append(float(pred["score"]))
 
         # Rule attribution: among detected violations (true positives).
         if gold_anomaly and pred_anomaly:
@@ -97,7 +86,7 @@ def _score_anomaly_ids(
         "recall": round(recall, 4),
         "f1": round(f1, 4),
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
-        "roc_auc": _roc_auc(auc_scores, auc_labels) if auc_scores else None,
+        "roc_auc": _roc_auc(auc_labels, auc_scores) if auc_scores else None,
         "rule_attribution_accuracy": (
             round(attributed_correct / attributable, 4) if attributable else None
         ),

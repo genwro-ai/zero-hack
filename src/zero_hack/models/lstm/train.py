@@ -12,7 +12,13 @@ from zero_hack.models.common import (
     pick_device,
     train_model,
 )
+from zero_hack.models.lstm.inference import save_lstm_checkpoint
 from zero_hack.models.lstm.model import LSTMConfig, LSTMModel
+from zero_hack.models.ngram_residual import save_residual_checkpoint, wrap_residual
+from zero_hack.models.scheduled_sampling import (
+    make_sequence_loader,
+    train_model_scheduled_sampling,
+)
 
 
 def build_model(bundle: DataBundle, config: LSTMConfig) -> LSTMModel:
@@ -38,6 +44,58 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--report-dir", default=str(DEFAULT_METRICS_DIR))
+    parser.add_argument(
+        "--family-dropout",
+        type=float,
+        default=0.0,
+        help=(
+            "Probability of replacing the family conditioning token with "
+            "<FAMILY_UNKNOWN> on the train split, so the model learns a "
+            "family-agnostic mode for OOD/unknown-family eval. 0.0 disables it."
+        ),
+    )
+    parser.add_argument(
+        "--scheduled-sampling",
+        action="store_true",
+        help="Train with scheduled sampling (free-running rollout) instead of teacher forcing.",
+    )
+    parser.add_argument(
+        "--ss-max-prob",
+        type=float,
+        default=0.25,
+        help="Max probability of feeding the model's own prediction (reached at the final epoch).",
+    )
+    parser.add_argument(
+        "--ss-schedule",
+        choices=("linear", "constant"),
+        default="linear",
+        help="How the scheduled-sampling probability ramps across epochs.",
+    )
+    parser.add_argument(
+        "--checkpoint-path",
+        default=None,
+        help="Where to save the trained checkpoint (.pt). Skipped if not set.",
+    )
+    parser.add_argument(
+        "--ngram-residual",
+        action="store_true",
+        help=(
+            "Normalise the model by a frozen n-gram prior during training "
+            "(product-of-experts residual): combined_logits = model + log p_ngram."
+        ),
+    )
+    parser.add_argument(
+        "--residual-ngram-n",
+        type=int,
+        default=1,
+        help="Order of the n-gram prior used by --ngram-residual (1=unigram nuisance).",
+    )
+    parser.add_argument(
+        "--residual-ngram-alpha",
+        type=float,
+        default=0.4,
+        help="Stupid-backoff weight of the n-gram prior used by --ngram-residual.",
+    )
     return parser.parse_args()
 
 
@@ -55,9 +113,22 @@ def main() -> None:
         bundle,
         batch_size=args.batch_size,
         max_context=args.max_context,
+        family_dropout=args.family_dropout,
     )
 
     model = build_model(bundle, LSTMConfig())
+    if args.ngram_residual:
+        model = wrap_residual(
+            model,
+            bundle.records["train"],
+            bundle.vocabulary,
+            n=args.residual_ngram_n,
+            alpha=args.residual_ngram_alpha,
+        )
+        print(
+            f"ngram-residual: prior = {args.residual_ngram_n}-gram "
+            f"(alpha={args.residual_ngram_alpha}) frozen in the loss"
+        )
     print(f"parameters: {count_parameters(model)}")
 
     device = pick_device(args.device)
@@ -67,14 +138,67 @@ def main() -> None:
         max_train_batches=args.max_train_batches,
         max_eval_batches=args.max_eval_batches,
         k=args.k,
+        scheduled_sampling=args.scheduled_sampling,
+        ss_max_prob=args.ss_max_prob,
+        ss_schedule=args.ss_schedule,
     )
-    model = train_model(
-        model,
-        loaders,
-        config=train_config,
-        device=device,
-        pad_id=bundle.vocabulary.pad_id,
-    )
+    if args.scheduled_sampling:
+        print(f"scheduled sampling: max_prob={args.ss_max_prob} schedule={args.ss_schedule}")
+        seq_loader = make_sequence_loader(
+            bundle,
+            "train",
+            batch_size=args.batch_size,
+            max_context=args.max_context,
+            family_dropout=args.family_dropout,
+        )
+        model = train_model_scheduled_sampling(
+            model,
+            seq_loader,
+            bundle.vocabulary,
+            config=train_config,
+            device=device,
+            eval_loader=loaders.get("valid"),
+            max_context=args.max_context,
+        )
+    else:
+        model = train_model(
+            model,
+            loaders,
+            config=train_config,
+            device=device,
+            pad_id=bundle.vocabulary.pad_id,
+        )
+
+    if args.checkpoint_path:
+        meta = {
+            "scheduled_sampling": args.scheduled_sampling,
+            "ss_max_prob": args.ss_max_prob,
+            "ss_schedule": args.ss_schedule,
+            "family_dropout": args.family_dropout,
+            "epochs": args.epochs,
+            "holdout_family": args.holdout_family,
+            "train_families": list(bundle.train_families),
+        }
+        if args.ngram_residual:
+            saved = save_residual_checkpoint(
+                args.checkpoint_path,
+                model,
+                bundle.vocabulary,
+                max_context=args.max_context,
+                n=args.residual_ngram_n,
+                alpha=args.residual_ngram_alpha,
+                splits_dir=args.splits_dir,
+                meta=meta,
+            )
+        else:
+            saved = save_lstm_checkpoint(
+                args.checkpoint_path,
+                model,
+                bundle.vocabulary,
+                max_context=args.max_context,
+                meta=meta,
+            )
+        print(f"wrote checkpoint {saved}")
 
     evaluate_and_report(
         model,

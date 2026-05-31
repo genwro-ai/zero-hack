@@ -16,6 +16,10 @@ from zero_hack.models.common import (
     pick_device,
     train_model,
 )
+from zero_hack.models.scheduled_sampling import (
+    make_sequence_loader,
+    train_model_scheduled_sampling,
+)
 from zero_hack.models.transformer.model import TransformerConfig, TransformerModel
 
 
@@ -42,6 +46,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None)
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--report-dir", default=str(DEFAULT_METRICS_DIR))
+    parser.add_argument(
+        "--family-dropout",
+        type=float,
+        default=0.0,
+        help=(
+            "Probability of replacing the family conditioning token with "
+            "<FAMILY_UNKNOWN> on the train split, so the model learns a "
+            "family-agnostic mode for OOD/unknown-family eval. 0.0 disables it."
+        ),
+    )
+    parser.add_argument(
+        "--scheduled-sampling",
+        action="store_true",
+        help="Train with scheduled sampling (free-running rollout) instead of teacher forcing.",
+    )
+    parser.add_argument(
+        "--ss-max-prob",
+        type=float,
+        default=0.25,
+        help="Max probability of feeding the model's own prediction (reached at the final epoch).",
+    )
+    parser.add_argument(
+        "--ss-schedule",
+        choices=("linear", "constant"),
+        default="linear",
+        help="How the scheduled-sampling probability ramps across epochs.",
+    )
     return parser.parse_args()
 
 
@@ -59,6 +90,7 @@ def main() -> None:
         bundle,
         batch_size=args.batch_size,
         max_context=args.max_context,
+        family_dropout=args.family_dropout,
     )
 
     config = TransformerConfig(max_context=args.max_context)
@@ -72,14 +104,36 @@ def main() -> None:
         max_train_batches=args.max_train_batches,
         max_eval_batches=args.max_eval_batches,
         k=args.k,
+        scheduled_sampling=args.scheduled_sampling,
+        ss_max_prob=args.ss_max_prob,
+        ss_schedule=args.ss_schedule,
     )
-    train_model(
-        model,
-        loaders,
-        config=train_config,
-        device=device,
-        pad_id=bundle.vocabulary.pad_id,
-    )
+    if args.scheduled_sampling:
+        print(f"scheduled sampling: max_prob={args.ss_max_prob} schedule={args.ss_schedule}")
+        seq_loader = make_sequence_loader(
+            bundle,
+            "train",
+            batch_size=args.batch_size,
+            max_context=args.max_context,
+            family_dropout=args.family_dropout,
+        )
+        train_model_scheduled_sampling(
+            model,
+            seq_loader,
+            bundle.vocabulary,
+            config=train_config,
+            device=device,
+            eval_loader=loaders.get("valid"),
+            max_context=args.max_context,
+        )
+    else:
+        train_model(
+            model,
+            loaders,
+            config=train_config,
+            device=device,
+            pad_id=bundle.vocabulary.pad_id,
+        )
 
     evaluate_and_report(
         model,

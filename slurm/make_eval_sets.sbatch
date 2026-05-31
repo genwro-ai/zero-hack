@@ -11,6 +11,9 @@
 #SBATCH --time=0:30:00
 #SBATCH --output=outputs/slurm/%x_%A_%a.out
 #SBATCH --error=outputs/slurm/%x_%A_%a.err
+# Array job: END emails arrive per task; change to FAIL to reduce volume.
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=lukasz.lenkiewicz28@gmail.com
 
 set -euo pipefail
 
@@ -77,7 +80,7 @@ mkdir -p outputs/slurm "$EVAL_ROOT"
 printf "task_id=%s dataset=%s generated_root=%s eval_root=%s holdouts=%s\n" \
   "$TASK_ID" "$DATASET" "$GENERATED_ROOT" "$EVAL_ROOT" "$HOLDOUT_FAMILIES"
 
-time "$RUNNER" uv run python scripts/make_all_eval_sets.py \
+time "$RUNNER" uv run --no-sync python scripts/make_all_eval_sets.py \
   --generated-root "$GENERATED_ROOT" \
   --datasets "$DATASET" \
   --out-root "$EVAL_ROOT" \

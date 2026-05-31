@@ -1,6 +1,3 @@
-from zero_hack.eval.blocks import block_runs
-
-
 def levenshtein(a: list[str], b: list[str]) -> int:
     """Token-level edit distance (insert/delete/substitute = cost 1)."""
     if not a:
@@ -17,25 +14,11 @@ def levenshtein(a: list[str], b: list[str]) -> int:
     return prev[-1]
 
 
-def lcs_length(a: list[str], b: list[str]) -> int:
-    """Length of the longest common subsequence of two token lists."""
-    if not a or not b:
-        return 0
-    prev = [0] * (len(b) + 1)
-    for tok_a in a:
-        curr = [0] * (len(b) + 1)
-        for j, tok_b in enumerate(b, start=1):
-            curr[j] = prev[j - 1] + 1 if tok_a == tok_b else max(prev[j], curr[j - 1])
-        prev = curr
-    return prev[-1]
-
-
 def _token_accuracy(pred: list[str], gold: list[str]) -> float:
-    denom = max(len(pred), len(gold))
-    if denom == 0:
-        return 1.0
-    matches = sum(1 for p, g in zip(pred, gold, strict=False) if p == g)
-    return matches / denom
+    n = min(len(pred), len(gold))
+    if n == 0:
+        return 0.0
+    return sum(p == g for p, g in zip(pred, gold, strict=False)) / n
 
 
 def _normalized_edit_distance(pred: list[str], gold: list[str]) -> float:
@@ -46,12 +29,43 @@ def _normalized_edit_distance(pred: list[str], gold: list[str]) -> float:
 
 
 def _block_accuracy(pred: list[str], gold: list[str]) -> float:
-    pred_runs = block_runs(pred)
-    gold_runs = block_runs(gold)
-    denom = max(len(pred_runs), len(gold_runs))
-    if denom == 0:
-        return 1.0
-    return lcs_length(pred_runs, gold_runs) / denom
+    return _token_accuracy(_block_signature(pred), _block_signature(gold))
+
+
+def _major_block(step: str) -> str:
+    s = step.upper()
+    if "LITHO" in s or s.startswith("SPIN COAT PHOTORESIST") or "MASK LEVEL" in s:
+        return "LITHO"
+    if "ETCH" in s or s.startswith("OPEN PAD WINDOW"):
+        return "ETCH"
+    if "IMPLANT" in s or "ANNEAL" in s or "DIFFUSION" in s:
+        return "DOPING_THERMAL"
+    if s.startswith("DEPOSIT") or "OXIDATION" in s or "GROWTH" in s:
+        return "DEPOSITION"
+    if s.startswith("CMP") or "PLANAR" in s:
+        return "PLANARIZATION"
+    if "VIA" in s:
+        return "VIA"
+    if "PASSIVATION" in s:
+        return "PASSIVATION"
+    if "BACKSIDE" in s or "GRIND" in s:
+        return "BACKSIDE"
+    if "TEST" in s or "MEASURE" in s or "INSPECT" in s or "ANALYSIS" in s:
+        return "METROLOGY_TEST"
+    if "LOT" in s or "RELEASE" in s or "SHIP" in s:
+        return "LOGISTICS"
+    return "OTHER"
+
+
+def _block_signature(seq: list[str]) -> list[str]:
+    sig: list[str] = []
+    prev: str | None = None
+    for step in seq:
+        block = _major_block(step)
+        if block != prev:
+            sig.append(block)
+            prev = block
+    return sig
 
 
 def score_completion(

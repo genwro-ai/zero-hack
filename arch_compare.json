@@ -1,0 +1,64 @@
+{
+  "valid_s100k": {
+    "gpt_rope": {
+      "id": {
+        "next_step.top1": 0.6749999999999999,
+        "completion.block_accuracy": 0.9607,
+        "anomaly.roc_auc": 0.9995333333333334
+      },
+      "ood": {
+        "next_step.top1": 0.6,
+        "completion.block_accuracy": 0.7905666666666668,
+        "anomaly.roc_auc": 0.6124999999999999
+      }
+    },
+    "gpt_alibi": {
+      "id": {
+        "next_step.top1": 0.6525,
+        "completion.block_accuracy": 0.9628333333333333,
+        "anomaly.roc_auc": 0.9992666666666666
+      },
+      "ood": {
+        "next_step.top1": 0.635,
+        "completion.block_accuracy": 0.8056333333333333,
+        "anomaly.roc_auc": 0.6796333333333333
+      }
+    },
+    "gpt_abs": {
+      "id": {
+        "next_step.top1": 0.6749999999999999,
+        "completion.block_accuracy": 0.9645000000000001,
+        "anomaly.roc_auc": 0.9999666666666668
+      },
+      "ood": {
+        "next_step.top1": 0.66,
+        "completion.block_accuracy": 0.7987000000000001,
+        "anomaly.roc_auc": 0.4332
+      }
+    },
+    "gpt_llama": {
+      "id": {
+        "next_step.top1": 0.6808333333333333,
+        "completion.block_accuracy": 0.9635000000000001,
+        "anomaly.roc_auc": 0.9998666666666667
+      },
+      "ood": {
+        "next_step.top1": 0.6716666666666667,
+        "completion.block_accuracy": 0.7560333333333333,
+        "anomaly.roc_auc": 0.6503
+      }
+    },
+    "transformer": {
+      "id": {
+        "next_step.top1": 0.6808333333333333,
+        "completion.block_accuracy": 0.9630000000000001,
+        "anomaly.roc_auc": 0.9998333333333335
+      },
+      "ood": {
+        "next_step.top1": 0.6333333333333333,
+        "completion.block_accuracy": 0.7592333333333334,
+        "anomaly.roc_auc": 0.7727333333333334
+      }
+    }
+  }
+}

@@ -58,12 +58,11 @@ import csv
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
-
 
 # ---------------------------------------------------------------------------
 # Token-level edit distance (Levenshtein, O(m*n) DP)
 # ---------------------------------------------------------------------------
+
 
 def _levenshtein(seq1: list, seq2: list) -> int:
     """Token-level Levenshtein distance (each element is one token)."""
@@ -96,15 +95,17 @@ def token_accuracy(pred: list[str], ref: list[str]) -> float:
     n = min(len(pred), len(ref))
     if n == 0:
         return 0.0
-    return sum(p == r for p, r in zip(pred, ref)) / n
+    return sum(p == r for p, r in zip(pred, ref, strict=False)) / n
 
 
 # ---------------------------------------------------------------------------
 # ROC-AUC (no external dependencies)
 # ---------------------------------------------------------------------------
 
+
 def _safe_div(num: float, den: float) -> float:
     return num / den if den else 0.0
+
 
 def _roc_auc(labels: list[int], scores: list[float]) -> float:
     """
@@ -112,12 +113,12 @@ def _roc_auc(labels: list[int], scores: list[float]) -> float:
     labels: 1 = positive (valid), 0 = negative (invalid).
     scores: higher score = more likely positive.
     """
-    pos_scores = [s for s, l in zip(scores, labels) if l == 1]
-    neg_scores = [s for s, l in zip(scores, labels) if l == 0]
+    pos_scores = [s for s, label in zip(scores, labels, strict=True) if label == 1]
+    neg_scores = [s for s, label in zip(scores, labels, strict=True) if label == 0]
     if not pos_scores or not neg_scores:
         return float("nan")
     concordant = sum(p > n for p in pos_scores for n in neg_scores)
-    tied       = sum(p == n for p in pos_scores for n in neg_scores)
+    tied = sum(p == n for p in pos_scores for n in neg_scores)
     total = len(pos_scores) * len(neg_scores)
     return (concordant + 0.5 * tied) / total
 
@@ -161,7 +162,7 @@ def _major_block(step: str) -> str:
 def _block_signature(seq: list[str]) -> list[str]:
     """Collapse a token sequence to de-duplicated major-process blocks."""
     sig: list[str] = []
-    prev: Optional[str] = None
+    prev: str | None = None
     for step in seq:
         b = _major_block(step)
         if b != prev:
@@ -182,6 +183,7 @@ def block_level_accuracy(pred: list[str], ref: list[str]) -> float:
 # CSV readers
 # ---------------------------------------------------------------------------
 
+
 def _read_csv(path: Path) -> list[dict]:
     with path.open(newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
@@ -195,8 +197,6 @@ def _read_csv_norm(path: Path) -> list[dict]:
     """Read CSV with normalised (BOM/quote-stripped) column names."""
     with path.open(newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        raw_fields = reader.fieldnames or []
-        norm = {_norm_key(h): h for h in raw_fields}
         rows = []
         for row in reader:
             rows.append({_norm_key(k): v.strip().strip('"') for k, v in row.items()})
@@ -207,17 +207,18 @@ def _read_csv_norm(path: Path) -> list[dict]:
 # Task: next-step prediction
 # ---------------------------------------------------------------------------
 
+
 def _score_next_step(gt_path: Path, pred_path: Path) -> None:
-    gt_rows   = _read_csv_norm(gt_path)
+    gt_rows = _read_csv_norm(gt_path)
     pred_rows = _read_csv_norm(pred_path)
 
     # Ground truth index: EXAMPLE_ID → NEXT_STEP, FAMILY, COMPLETION_FRACTION
     gt = {}
     for r in gt_rows:
         gt[r["EXAMPLE_ID"]] = {
-            "next_step":  r["NEXT_STEP"],
-            "family":     r["FAMILY"],
-            "fraction":   r["COMPLETION_FRACTION"],
+            "next_step": r["NEXT_STEP"],
+            "family": r["FAMILY"],
+            "fraction": r["COMPLETION_FRACTION"],
         }
 
     # Predictions index: EXAMPLE_ID → [RANK_1, ..., RANK_5]
@@ -235,25 +236,22 @@ def _score_next_step(gt_path: Path, pred_path: Path) -> None:
         print("[ERROR] No matching EXAMPLE_IDs between ground truth and predictions.")
         sys.exit(1)
 
-    top1_hits = defaultdict(list)   # (family, fraction) -> [bool, ...]
+    top1_hits = defaultdict(list)  # (family, fraction) -> [bool, ...]
     top3_hits = defaultdict(list)
     top5_hits = defaultdict(list)
-    mrr_vals  = defaultdict(list)
+    mrr_vals = defaultdict(list)
 
     for eid in matched:
-        info      = gt[eid]
-        truth     = info["next_step"]
-        ranks     = pred[eid]
-        key_fam   = info["family"]
-        key_frac  = info["fraction"]
+        info = gt[eid]
+        truth = info["next_step"]
+        ranks = pred[eid]
+        key_fam = info["family"]
+        key_frac = info["fraction"]
 
         hit1 = bool(ranks) and ranks[0] == truth
         hit3 = truth in ranks[:3]
         hit5 = truth in ranks
-        if truth in ranks:
-            rr = 1.0 / (ranks.index(truth) + 1)
-        else:
-            rr = 0.0
+        rr = 1.0 / (ranks.index(truth) + 1) if truth in ranks else 0.0
 
         top1_hits[("ALL", "ALL")].append(hit1)
         top3_hits[("ALL", "ALL")].append(hit3)
@@ -278,17 +276,19 @@ def _score_next_step(gt_path: Path, pred_path: Path) -> None:
     print(f"\n{sep}")
     print("EVAL RESULTS — NEXT-STEP PREDICTION")
     print(sep)
-    print(f"Evaluated : {len(matched)}/{len(gt)} examples"
-          + (f"  ({unmatched} unmatched EXAMPLE_IDs)" if unmatched else ""))
+    print(
+        f"Evaluated : {len(matched)}/{len(gt)} examples"
+        + (f"  ({unmatched} unmatched EXAMPLE_IDs)" if unmatched else "")
+    )
     print()
 
     all_t1 = _acc(top1_hits[("ALL", "ALL")])
     all_t3 = _acc(top3_hits[("ALL", "ALL")])
     all_t5 = _acc(top5_hits[("ALL", "ALL")])
     all_mrr = _mean(mrr_vals[("ALL", "ALL")])
-    print(f"Top-1 Accuracy : {all_t1:.4f}  ({all_t1*100:.1f}%)")
-    print(f"Top-3 Accuracy : {all_t3:.4f}  ({all_t3*100:.1f}%)")
-    print(f"Top-5 Accuracy : {all_t5:.4f}  ({all_t5*100:.1f}%)")
+    print(f"Top-1 Accuracy : {all_t1:.4f}  ({all_t1 * 100:.1f}%)")
+    print(f"Top-3 Accuracy : {all_t3:.4f}  ({all_t3 * 100:.1f}%)")
+    print(f"Top-5 Accuracy : {all_t5:.4f}  ({all_t5 * 100:.1f}%)")
     print(f"MRR            : {all_mrr:.4f}")
 
     # Per-family breakdown
@@ -311,7 +311,9 @@ def _score_next_step(gt_path: Path, pred_path: Path) -> None:
             t3 = _acc(top3_hits[("ALL", frac)])
             t5 = _acc(top5_hits[("ALL", frac)])
             mrr = _mean(mrr_vals[("ALL", frac)])
-            print(f"  {frac:<6s}  Top-1: {t1:.4f}  Top-3: {t3:.4f}  Top-5: {t5:.4f}  MRR: {mrr:.4f}")
+            print(
+                f"  {frac:<6s}  Top-1: {t1:.4f}  Top-3: {t3:.4f}  Top-5: {t5:.4f}  MRR: {mrr:.4f}"
+            )
 
     print()
 
@@ -320,20 +322,21 @@ def _score_next_step(gt_path: Path, pred_path: Path) -> None:
 # Task: sequence completion
 # ---------------------------------------------------------------------------
 
+
 def _score_completion(gt_path: Path, pred_path: Path) -> None:
-    gt_rows   = _read_csv_norm(gt_path)
+    gt_rows = _read_csv_norm(gt_path)
     pred_rows = _read_csv_norm(pred_path)
 
     # Ground truth: EXAMPLE_ID → {partial, full, family, fraction}
     gt = {}
     for r in gt_rows:
-        partial  = r["PARTIAL_SEQUENCE"].split("|")
-        full     = r["FULL_SEQUENCE"].split("|")
+        partial = r["PARTIAL_SEQUENCE"].split("|")
+        full = r["FULL_SEQUENCE"].split("|")
         gt[r["EXAMPLE_ID"]] = {
-            "partial":  partial,
-            "full":     full,
-            "remaining": full[len(partial):],
-            "family":   r["FAMILY"],
+            "partial": partial,
+            "full": full,
+            "remaining": full[len(partial) :],
+            "family": r["FAMILY"],
             "fraction": r["COMPLETION_FRACTION"],
         }
 
@@ -344,31 +347,31 @@ def _score_completion(gt_path: Path, pred_path: Path) -> None:
         seq_str = r.get("PREDICTED_SEQUENCE", "").strip()
         pred[eid] = [s for s in seq_str.split("|") if s]
 
-    matched   = [eid for eid in gt if eid in pred]
+    matched = [eid for eid in gt if eid in pred]
     unmatched = len(gt) - len(matched)
 
     if not matched:
         print("[ERROR] No matching EXAMPLE_IDs between ground truth and predictions.")
         sys.exit(1)
 
-    ned_all:    list[float] = []
-    exact_all:  list[bool]  = []
-    tacc_all:   list[float] = []
-    block_all:  list[float] = []
-    ned_by:     dict = defaultdict(list)
-    exact_by:   dict = defaultdict(list)
+    ned_all: list[float] = []
+    exact_all: list[bool] = []
+    tacc_all: list[float] = []
+    block_all: list[float] = []
+    ned_by: dict = defaultdict(list)
+    exact_by: dict = defaultdict(list)
 
     for eid in matched:
-        info      = gt[eid]
-        ref       = info["remaining"]
+        info = gt[eid]
+        ref = info["remaining"]
         predicted = pred[eid]
-        fam       = info["family"]
-        frac      = info["fraction"]
+        fam = info["family"]
+        frac = info["fraction"]
 
-        ned   = normalized_edit_distance(predicted, ref)
+        ned = normalized_edit_distance(predicted, ref)
         exact = predicted == ref
-        tacc  = token_accuracy(predicted, ref)
-        bacc  = block_level_accuracy(predicted, ref)
+        tacc = token_accuracy(predicted, ref)
+        bacc = block_level_accuracy(predicted, ref)
 
         ned_all.append(ned)
         exact_all.append(exact)
@@ -386,19 +389,25 @@ def _score_completion(gt_path: Path, pred_path: Path) -> None:
     print(f"\n{sep}")
     print("EVAL RESULTS — SEQUENCE COMPLETION")
     print(sep)
-    print(f"Evaluated : {len(matched)}/{len(gt)} examples"
-          + (f"  ({unmatched} unmatched EXAMPLE_IDs)" if unmatched else ""))
+    print(
+        f"Evaluated : {len(matched)}/{len(gt)} examples"
+        + (f"  ({unmatched} unmatched EXAMPLE_IDs)" if unmatched else "")
+    )
     print()
     print(f"Mean Normalized Edit Distance : {_mean(ned_all):.4f}  (lower is better)")
-    print(f"Exact Match Rate              : {_mean(exact_all):.4f}  ({_mean(exact_all)*100:.1f}%)")
-    print(f"Mean Token Accuracy           : {_mean(tacc_all):.4f}  ({_mean(tacc_all)*100:.1f}%)")
-    print(f"Mean Block-level Accuracy     : {_mean(block_all):.4f}  ({_mean(block_all)*100:.1f}%)")
+    print(
+        f"Exact Match Rate              : {_mean(exact_all):.4f}  ({_mean(exact_all) * 100:.1f}%)"
+    )
+    print(f"Mean Token Accuracy           : {_mean(tacc_all):.4f}  ({_mean(tacc_all) * 100:.1f}%)")
+    print(
+        f"Mean Block-level Accuracy     : {_mean(block_all):.4f}  ({_mean(block_all) * 100:.1f}%)"
+    )
 
     families = sorted({gt[e]["family"] for e in matched})
     if len(families) > 1:
         print("\nBy family:")
         for fam in families:
-            n  = _mean(ned_by[(fam, "ALL")])
+            n = _mean(ned_by[(fam, "ALL")])
             ex = _mean(exact_by[(fam, "ALL")])
             print(f"  {fam:<8s}  NED: {n:.4f}  Exact: {ex:.4f}")
 
@@ -406,7 +415,7 @@ def _score_completion(gt_path: Path, pred_path: Path) -> None:
     if len(fractions) > 1:
         print("\nBy completion fraction:")
         for frac in fractions:
-            n  = _mean(ned_by[("ALL", frac)])
+            n = _mean(ned_by[("ALL", frac)])
             ex = _mean(exact_by[("ALL", frac)])
             print(f"  {frac:<6s}  NED: {n:.4f}  Exact: {ex:.4f}")
 
@@ -417,10 +426,11 @@ def _score_completion(gt_path: Path, pred_path: Path) -> None:
 # Task: anomaly detection (forbidden patterns)
 # ---------------------------------------------------------------------------
 
+
 def _score_anomaly(
     gt_path: Path,
     pred_path: Path,
-    valid_supplement: Optional[Path],
+    valid_supplement: Path | None,
 ) -> None:
     """
     Score detection of invalid (forbidden-pattern) sequences.
@@ -436,7 +446,7 @@ def _score_anomaly(
     # Load forbidden examples (label = 0)
     for r in _read_csv_norm(gt_path):
         gt[r["EXAMPLE_ID"]] = {
-            "is_valid":       0,
+            "is_valid": 0,
             "violation_rule": r.get("VIOLATION_RULE", ""),
         }
 
@@ -446,8 +456,10 @@ def _score_anomaly(
             eid = r["EXAMPLE_ID"]
             if eid not in gt:
                 gt[eid] = {"is_valid": 1, "violation_rule": ""}
-        print(f"  Supplemented with {sum(1 for v in gt.values() if v['is_valid']==1)} "
-              f"valid examples from {valid_supplement.name}")
+        print(
+            f"  Supplemented with {sum(1 for v in gt.values() if v['is_valid'] == 1)} "
+            f"valid examples from {valid_supplement.name}"
+        )
 
     pred_rows = _read_csv_norm(pred_path)
     pred: dict[str, dict] = {}
@@ -464,12 +476,12 @@ def _score_anomaly(
             score = float(is_valid_pred) if is_valid_pred >= 0 else 0.5
         predicted_rule = r.get("PREDICTED_RULE", "").strip()
         pred[eid] = {
-            "is_valid":       is_valid_pred,
-            "score":          score,
+            "is_valid": is_valid_pred,
+            "score": score,
             "predicted_rule": predicted_rule,
         }
 
-    matched   = [eid for eid in gt if eid in pred]
+    matched = [eid for eid in gt if eid in pred]
     unmatched = len(gt) - len(matched)
 
     if not matched:
@@ -489,23 +501,37 @@ def _score_anomaly(
             rule_gt.append(g["violation_rule"])
             rule_pred.append(p.get("predicted_rule", ""))
 
-    n_pos = sum(l == 1 for l in labels)
-    n_neg = sum(l == 0 for l in labels)
-    accuracy = sum(p == l for p, l in zip(preds_bin, labels)) / len(labels)
+    n_pos = sum(label == 1 for label in labels)
+    n_neg = sum(label == 0 for label in labels)
+    accuracy = sum(
+        pred_label == label for pred_label, label in zip(preds_bin, labels, strict=True)
+    ) / len(labels)
     auc = _roc_auc(labels, scores)
 
     # Invalid class metrics (invalid = 0) for anomaly detection.
-    tp = sum((l == 0) and (p == 0) for l, p in zip(labels, preds_bin))
-    tn = sum((l == 1) and (p == 1) for l, p in zip(labels, preds_bin))
-    fp = sum((l == 1) and (p == 0) for l, p in zip(labels, preds_bin))
-    fn = sum((l == 0) and (p != 0) for l, p in zip(labels, preds_bin))
+    tp = sum(
+        (label == 0) and (pred_label == 0)
+        for label, pred_label in zip(labels, preds_bin, strict=True)
+    )
+    tn = sum(
+        (label == 1) and (pred_label == 1)
+        for label, pred_label in zip(labels, preds_bin, strict=True)
+    )
+    fp = sum(
+        (label == 1) and (pred_label == 0)
+        for label, pred_label in zip(labels, preds_bin, strict=True)
+    )
+    fn = sum(
+        (label == 0) and (pred_label != 0)
+        for label, pred_label in zip(labels, preds_bin, strict=True)
+    )
     precision, recall, f1 = _precision_recall_f1(tp, fp, fn)
 
     # Rule attribution: among invalid examples where model correctly says invalid,
     # what fraction gets the rule right?
     correct_detection = [
-        (rg, rp)
-        for eid, rg, rp in zip(matched, rule_gt, rule_pred)
+        (gt[eid]["violation_rule"], pred[eid].get("predicted_rule", ""))
+        for eid in matched
         if gt[eid]["is_valid"] == 0 and pred[eid]["is_valid"] == 0
     ]
     if correct_detection:
@@ -517,11 +543,13 @@ def _score_anomaly(
     print(f"\n{sep}")
     print("EVAL RESULTS — ANOMALY DETECTION (FORBIDDEN PATTERNS)")
     print(sep)
-    print(f"Evaluated       : {len(matched)}/{len(gt)} examples"
-          + (f"  ({unmatched} unmatched)" if unmatched else ""))
+    print(
+        f"Evaluated       : {len(matched)}/{len(gt)} examples"
+        + (f"  ({unmatched} unmatched)" if unmatched else "")
+    )
     print(f"Ground-truth    : {n_neg} invalid  /  {n_pos} valid")
     print()
-    print(f"Binary Accuracy : {accuracy:.4f}  ({accuracy*100:.1f}%)")
+    print(f"Binary Accuracy : {accuracy:.4f}  ({accuracy * 100:.1f}%)")
     print(f"Precision (invalid class) : {precision:.4f}")
     print(f"Recall (invalid class)    : {recall:.4f}")
     print(f"F1 (invalid class)        : {f1:.4f}")
@@ -536,8 +564,10 @@ def _score_anomaly(
 
     if rule_pred:
         ra_str = f"{rule_attr:.4f}" if rule_attr == rule_attr else "n/a"
-        print(f"Rule Attribution Accuracy : {ra_str}  "
-              f"(among {len(correct_detection)} correctly-detected invalid sequences)")
+        print(
+            f"Rule Attribution Accuracy : {ra_str}  "
+            f"(among {len(correct_detection)} correctly-detected invalid sequences)"
+        )
 
     # Per-rule breakdown
     rule_correct: dict[str, list[bool]] = defaultdict(list)
@@ -552,10 +582,6 @@ def _score_anomaly(
         for rule in sorted(rule_correct):
             hits = rule_correct[rule]
             rate = sum(hits) / len(hits)
-            bar = "#" * int(rate * 20) + "-" * (20 - int(rate * 20))
-        for rule in sorted(rule_correct):
-            hits = rule_correct[rule]
-            rate = sum(hits) / len(hits)
             print(f"  {rule:<40s}  {rate:.2f}  ({sum(hits)}/{len(hits)})")
     print()
 
@@ -563,6 +589,7 @@ def _score_anomaly(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -581,7 +608,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         metavar="CSV",
         help="Path to eval_set_valid.csv (next-step / completion) or "
-             "eval_set_forbidden.csv (anomaly).",
+        "eval_set_forbidden.csv (anomaly).",
     )
     p.add_argument(
         "--predictions",
@@ -594,7 +621,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="CSV",
         help="[anomaly only] Path to eval_set_valid.csv to add valid examples "
-             "as negative class for ROC-AUC computation.",
+        "as negative class for ROC-AUC computation.",
     )
     return p
 
@@ -603,7 +630,7 @@ def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    gt_path   = Path(args.ground_truth)
+    gt_path = Path(args.ground_truth)
     pred_path = Path(args.predictions)
 
     for path, label in [(gt_path, "--ground-truth"), (pred_path, "--predictions")]:
