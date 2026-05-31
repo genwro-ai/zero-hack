@@ -172,26 +172,15 @@ See [README.md](README.md) for the full data/eval layout.
 
 ## What worked / What didn't
 
-- **Worked:**
-  - A reproducible end-to-end pipeline (synthetic generation → splits → eval) with a shared scorer that mirrors the organizer CLI, so every model is compared on identical artifacts.
-  - Strong, cheap classical baselines: the 5-gram backoff reaches **0.713** next-step Top-1 and **~0.997** Top-3.
-  - The LSTM beats the baselines on next-step (**0.81** Top-1) and decodes **100%-process-valid** free-running completions.
-  - Likelihood-threshold anomaly detection is near-perfect on the local synthetic eval (**F1 / ROC-AUC 1.00**).
-- **Didn't:**
-  - Sequence-completion exact match is **≈0** for every model — a valid continuation is rarely the *reference* continuation, so token-level fidelity remains unsolved at this scale.
-  - Scheduled sampling did **not** help: token accuracy slipped (0.392 → 0.371) with next-step Top-1 essentially unchanged — no error-recovery gain at 5k/family.
-  - No trained-model **OOD** numbers yet; the leave-one-family-out generalization gap is still untested.
+- **Worked:** {…}
+- **Didn't:** {…}
 
 ## What we'd do with another 36 hours
 
-- Train and evaluate the transformer/GPT decoders already scaffolded, and run the leave-one-family-out **OOD** protocol end-to-end (the real differentiator).
-- Attack completion with constraint-/validity-aware decoding and the GRPO verifiable-reward fine-tuning that is wired up, targeting exact-match and edit-distance rather than only validity.
-- Scale data (10k / 20k per family), report scaling curves, and feed real training-loss curves and per-family breakdowns into the dashboard via `export_dashboard_data.py`.
-- Add an ensemble of the classical and neural next-step models, and swap our local scorer for the official organizer `eval_metrics.py` once distributed.
+- {Next step 1} · {Next step 2} - Ensemble 
 
 ## Credits & dependencies
 
-- **Libraries / frameworks:** PyTorch, NumPy; `uv` for environment management; ruff, pre-commit, and pytest for tooling.
-- **Data:** Infineon Industrial AI starter data + our synthetic generators (no proprietary data committed).
-- **Compute:** CINECA **Leonardo** (CUDA A100) via `slurm/` for neural training; everything else runs on CPU.
-- **AI coding tools used:** Claude Code (Anthropic).
+- **Libraries / frameworks:** {PyTorch, …}
+- **Data:** Infineon Industrial AI starter data + our synthetic generators.
+- **AI coding tools used:** {…}
