@@ -172,6 +172,11 @@ Industrial track-specific repository deliverables:
   `outputs/preds/<dataset>/holdout_<family>/{id,ood}/<method>/` (see
   [Evaluation](#evaluation)).
 - Training artifacts such as checkpoints, logs, and loss curves.
+  Final submission checkpoint:
+  [`final_submission_gpt_all_families/best.pt`](https://drive.google.com/file/d/1t9V0vZPqe0P-2kE3MtPyTI3lKgLUy7pf/view?usp=sharing),
+  corresponding to
+  `outputs/models/final_submission/final_submission_gpt_all_families/best.pt`
+  (`PHASE_LOSS_WEIGHT=0`, `METHOD_NAME=final_submission_gpt`).
 - Scores from the organizer `eval_metrics.py` script when it is available; until
   then, self-score locally with `scripts/eval_metrics.py`.
 - A baseline-vs-trained comparison on identical inputs (the shared splits and
