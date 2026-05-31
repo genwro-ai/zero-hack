@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import torch
+
 from zero_hack import PROJECT_ROOT
 from zero_hack.data import SequenceRecord
 from zero_hack.eval import io
@@ -18,8 +20,10 @@ from zero_hack.models.classic_baselines import (
     complete_sequence,
     predict_anomaly,
 )
-from zero_hack.models.common import FAMILIES, load_split_records
+from zero_hack.models.common import FAMILIES, load_split_records, pick_device
+from zero_hack.models.gpt_alibi import AlibiGPTConfig, train_gpt_alibi_adapter
 
+NEURAL_MODELS = ("gpt",)
 _DATASET_SIZE = re.compile(r"_s(\d+)k$")
 _VIEWS = ("id", "ood")
 _VARIANT_EVAL_SOURCE = "industrial_variants_with_generated_rule_anomalies"
@@ -77,6 +81,7 @@ def _write_eval_predictions(
     threshold: float,
     k: int,
     max_completion_steps: int,
+    anomaly_method: str = "likelihood",
 ) -> None:
     pred_dir.mkdir(parents=True, exist_ok=True)
     if "next_step" in tasks or "completion" in tasks:
@@ -111,7 +116,7 @@ def _write_eval_predictions(
             {
                 "example_id": row["example_id"],
                 **predict_anomaly(
-                    model, row["family"], list(row["sequence"]), "likelihood", threshold
+                    model, row["family"], list(row["sequence"]), anomaly_method, threshold
                 ),
             }
             for row in io.read_eval_input_anomaly(eval_dir / "eval_input_anomaly.csv")
@@ -182,7 +187,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--models",
         nargs="+",
-        choices=CLASSIC_BASELINES,
+        choices=list(CLASSIC_BASELINES) + list(NEURAL_MODELS),
         default=["ngram", "vlmc"],
     )
     parser.add_argument("--views", nargs="+", choices=_VIEWS, default=list(_VIEWS))
@@ -222,6 +227,47 @@ def _parse_args() -> argparse.Namespace:
         help="Sort the search summary in ascending order.",
     )
     parser.add_argument("--seed", type=int, default=1729)
+
+    # Anomaly scoring + GPT-ALiBi (--models gpt) hyperparameters. The GPT path
+    # reuses the same prediction/threshold/scoring machinery as the classic
+    # baselines through zero_hack.models.gpt_alibi.GPTAlibiAdapter.
+    parser.add_argument(
+        "--anomaly-method", choices=("likelihood", "validator"), default="likelihood"
+    )
+    parser.add_argument("--gpt-epochs", type=int, default=30)
+    parser.add_argument("--gpt-patience", type=int, default=4)
+    parser.add_argument("--gpt-d-model", type=int, default=256)
+    parser.add_argument("--gpt-nhead", type=int, default=4)
+    parser.add_argument("--gpt-layers", type=int, default=4)
+    parser.add_argument("--gpt-dim-feedforward", type=int, default=1024)
+    parser.add_argument("--gpt-batch-size", type=int, default=128)
+    parser.add_argument("--gpt-lr", type=float, default=6e-4)
+    parser.add_argument("--gpt-max-context", type=int, default=256)
+    parser.add_argument(
+        "--phase-loss-weight",
+        type=float,
+        default=0.0,
+        help="Accepted for slurm-wrapper compatibility; the GPT-ALiBi holdout "
+        "runs next-step cross-entropy only (auxiliary phase loss stays off).",
+    )
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--device", default=None)
+    parser.add_argument(
+        "--train-sizes",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Per-train-family sample sizes for a GPT scaling sweep; one run per size.",
+    )
+    parser.add_argument(
+        "--save-checkpoints",
+        action="store_true",
+        help="Persist trained GPT checkpoints under --checkpoints-root.",
+    )
+    parser.add_argument(
+        "--checkpoints-root",
+        default=str(PROJECT_ROOT / "outputs" / "checkpoints"),
+    )
     return parser.parse_args()
 
 
@@ -231,8 +277,9 @@ def _resolve_anomaly_threshold(
     *,
     calibration_dir: Path,
     tasks: tuple[str, ...],
+    anomaly_method: str = "likelihood",
 ) -> tuple[float, dict | None]:
-    if "anomaly" not in tasks:
+    if "anomaly" not in tasks or anomaly_method == "validator":
         return -1.0, None
 
     if not calibration_dir.exists():
@@ -288,7 +335,20 @@ def _model_configs(args: argparse.Namespace) -> list[dict[str, Any]]:
 
     configs = []
     for model_name in args.models:
-        if model_name == "ngram":
+        if model_name == "gpt":
+            sizes = args.train_sizes or [None]
+            for size in sizes:
+                label = "gpt" if size is None else f"gpt_t{size}"
+                configs.append(
+                    {
+                        "model": model_name,
+                        "label": label,
+                        "n": None,
+                        "alpha": None,
+                        "train_per_family": size,
+                    }
+                )
+        elif model_name == "ngram":
             for n in n_values:
                 for alpha in alpha_values:
                     label = f"ngram_n{n}_a{_format_float(alpha)}" if grid_mode else "ngram"
@@ -492,17 +552,64 @@ def main() -> None:
             for config in configs:
                 model_name = config["model"]
                 method_label = config["label"]
-                print(
-                    f"--> fitting {method_label} "
-                    f"(model={model_name} n={config['n']} alpha={config['alpha']})"
-                )
-                model = build_classic_baseline(
-                    model_name,
-                    train_records,
-                    n=config["n"],
-                    alpha=config["alpha"],
-                    seed=args.seed,
-                )
+                if model_name in NEURAL_MODELS:
+                    fit_records = train_records
+                    if config.get("train_per_family") is not None:
+                        fit_records = _limit_train_records(
+                            train_records,
+                            total=config["train_per_family"] * len(bundle.train_families),
+                            seed=args.seed,
+                        )
+                    print(
+                        f"--> training {method_label} (model={model_name} "
+                        f"d_model={args.gpt_d_model} layers={args.gpt_layers} "
+                        f"epochs={args.gpt_epochs} train_records={len(fit_records)})"
+                    )
+                    model = train_gpt_alibi_adapter(
+                        bundle,
+                        fit_records,
+                        config=AlibiGPTConfig(
+                            d_model=args.gpt_d_model,
+                            nhead=args.gpt_nhead,
+                            num_layers=args.gpt_layers,
+                            dim_feedforward=args.gpt_dim_feedforward,
+                            max_context=args.gpt_max_context,
+                        ),
+                        epochs=args.gpt_epochs,
+                        batch_size=args.gpt_batch_size,
+                        lr=args.gpt_lr,
+                        patience=args.gpt_patience,
+                        num_workers=args.num_workers,
+                        device=pick_device(args.device),
+                    )
+                    if args.save_checkpoints:
+                        ckpt_dir = (
+                            Path(args.checkpoints_root)
+                            / dataset
+                            / f"holdout_{holdout_family}"
+                            / method_label
+                        )
+                        ckpt_dir.mkdir(parents=True, exist_ok=True)
+                        torch.save(
+                            {
+                                "model_state": model.model.state_dict(),
+                                "model_config": model.model.config.to_dict(),
+                            },
+                            ckpt_dir / "best.pt",
+                        )
+                        print(f"--> saved checkpoint: {ckpt_dir / 'best.pt'}")
+                else:
+                    print(
+                        f"--> fitting {method_label} "
+                        f"(model={model_name} n={config['n']} alpha={config['alpha']})"
+                    )
+                    model = build_classic_baseline(
+                        model_name,
+                        train_records,
+                        n=config["n"],
+                        alpha=config["alpha"],
+                        seed=args.seed,
+                    )
 
                 threshold, tuning = _resolve_anomaly_threshold(
                     model,
@@ -512,6 +619,7 @@ def main() -> None:
                     / f"holdout_{holdout_family}"
                     / "calibration",
                     tasks=tasks,
+                    anomaly_method=args.anomaly_method,
                 )
                 if tuning is not None:
                     print(
@@ -543,6 +651,7 @@ def main() -> None:
                         threshold=threshold,
                         k=5,
                         max_completion_steps=args.max_completion_steps,
+                        anomaly_method=args.anomaly_method,
                     )
                     results = _score_prediction_files(
                         eval_dir=eval_dir,

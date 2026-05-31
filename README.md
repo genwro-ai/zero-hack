@@ -178,3 +178,10 @@ Industrial track-specific repository deliverables:
   eval set make this direct).
 
 Full copied instructions are in [docs/submission/SUBMISSION.md](docs/submission/SUBMISSION.md). A starter report is at [REPORT.md](REPORT.md).
+
+## Credits & dependencies
+
+- **Libraries:** [PyTorch](https://pytorch.org/) for the LSTM and GPT models and all training, [NumPy](https://numpy.org/) for numerics, and [vlmc](https://pypi.org/project/vlmc/) for the variable-length Markov chain baseline. Scoring metrics (top-k, MRR, normalized edit distance, ROC-AUC, rule attribution) are implemented in `src/zero_hack/eval/` without scikit-learn. Tests use [pytest](https://pytest.org/). The environment is managed with [uv](https://docs.astral.sh/uv/).
+- **Data:** the Infineon Industrial AI starter grammars (MOSFET, IGBT, IC) under `data/industrial/`, plus our own synthetic generators: the planner in `src/zero_hack/data/synth/`, the augmentation generator in `src/zero_hack/data/augmented_generator.py`, and the leak-free OOD generator `scripts/generate_novel_families.py`.
+- **Compute:** training and evaluation ran on the CINECA Leonardo cluster (one A100 64GB per job, `boost_usr_prod` partition) through the wrappers in `slurm/`.
+- **AI coding tools:** Claude Code (Anthropic) and Codex were used during development.
