@@ -743,6 +743,8 @@ def _evaluate_eval_sets(
 def _resolve_calibration_dir(args: argparse.Namespace) -> Path | None:
     if args.calibration_dir:
         return Path(args.calibration_dir)
+    if args.holdout_family is None:
+        return None
     return Path(args.eval_root) / args.dataset / f"holdout_{args.holdout_family}" / "calibration"
 
 
@@ -779,7 +781,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metrics-root", default=str(PROJECT_ROOT / "outputs" / "metrics"))
     parser.add_argument("--model-root", default=str(PROJECT_ROOT / "outputs" / "models"))
     parser.add_argument("--splits-dir", default=None)
-    parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default="ic")
+    parser.add_argument(
+        "--holdout-family",
+        choices=("mosfet", "igbt", "ic", "none"),
+        default="ic",
+        help="Leave-one-family-out holdout. Use 'none' to train on all families.",
+    )
     parser.add_argument("--method-name", default=MODEL_NAME)
     parser.add_argument(
         "--tasks", nargs="+", choices=("next_step", "completion", "anomaly"), default=["next_step"]
@@ -838,6 +845,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--step-dropout", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--max-completion-steps", type=int, default=240)
+    parser.add_argument(
+        "--skip-fixed-eval",
+        action="store_true",
+        help="Train and save only; skip fixed data/eval prediction/scoring.",
+    )
 
     parser.add_argument("--d-model", type=int, default=128)
     parser.add_argument("--nhead", type=int, default=4)
@@ -850,11 +862,16 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.holdout_family == "none":
+        args.holdout_family = None
     generated_root = Path(args.generated_root)
     splits_dir = (
         Path(args.splits_dir) if args.splits_dir else generated_root / args.dataset / "splits"
     )
-    run_name = f"{args.method_name}_holdout_{args.holdout_family}"
+    run_suffix = (
+        f"holdout_{args.holdout_family}" if args.holdout_family is not None else "all_families"
+    )
+    run_name = f"{args.method_name}_{run_suffix}"
     run_dir = Path(args.model_root) / args.dataset / run_name
     checkpoint_path = run_dir / "best.pt"
 
@@ -1009,6 +1026,11 @@ def main() -> None:
 
     anomaly_threshold = -math.inf
     if "anomaly" in args.tasks:
+        if args.holdout_family is None and args.calibration_dir is None:
+            raise SystemExit(
+                "Final/all-family anomaly threshold tuning needs --calibration-dir. "
+                "Use --skip-fixed-eval for training-only final runs."
+            )
         adapter = _GPTLikelihoodAdapter(model, bundle.vocabulary, device=device)
         anomaly_threshold, tuning = _tune_threshold(adapter, bundle, args)
         (run_dir / "anomaly_threshold.json").write_text(
@@ -1020,32 +1042,35 @@ def main() -> None:
             f"val_f1={tuning['val_f1']:.4f} source={tuning['source']}"
         )
 
-    views = args.eval_views or _default_views(
-        Path(args.eval_root),
-        args.dataset,
-        args.holdout_family,
-    )
-    eval_set_results = _evaluate_eval_sets(
-        model,
-        bundle,
-        method_name=args.method_name,
-        dataset=args.dataset,
-        holdout_family=args.holdout_family,
-        eval_root=Path(args.eval_root),
-        preds_root=Path(args.preds_root),
-        metrics_root=Path(args.metrics_root),
-        views=views,
-        tasks=tuple(args.tasks),
-        device=device,
-        k=args.k,
-        max_completion_steps=args.max_completion_steps,
-        anomaly_threshold=anomaly_threshold,
-        eval_family_mode=args.eval_family_mode,
-    )
-    (run_dir / "eval_set_metrics.json").write_text(
-        json.dumps(eval_set_results, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    if args.skip_fixed_eval or args.holdout_family is None:
+        print("skip fixed eval")
+    else:
+        views = args.eval_views or _default_views(
+            Path(args.eval_root),
+            args.dataset,
+            args.holdout_family,
+        )
+        eval_set_results = _evaluate_eval_sets(
+            model,
+            bundle,
+            method_name=args.method_name,
+            dataset=args.dataset,
+            holdout_family=args.holdout_family,
+            eval_root=Path(args.eval_root),
+            preds_root=Path(args.preds_root),
+            metrics_root=Path(args.metrics_root),
+            views=views,
+            tasks=tuple(args.tasks),
+            device=device,
+            k=args.k,
+            max_completion_steps=args.max_completion_steps,
+            anomaly_threshold=anomaly_threshold,
+            eval_family_mode=args.eval_family_mode,
+        )
+        (run_dir / "eval_set_metrics.json").write_text(
+            json.dumps(eval_set_results, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

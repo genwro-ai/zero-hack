@@ -9,7 +9,7 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=120GB
 #SBATCH --cpus-per-task=8
-#SBATCH --time=8:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=outputs/slurm/%x_%A_%a.out
 #SBATCH --error=outputs/slurm/%x_%A_%a.err
 
@@ -21,7 +21,14 @@ set -euo pipefail
 # Submit all holdouts:
 #   sbatch slurm/train_gpt_dpo.sbatch
 #
+# Defaults run a longer DPO pass:
+#   PAIRS=100000
+#   EPOCHS=10
+#   DPO_METHOD_NAME=gpt_dpo_10ep_100k
+#
 # If DPO pairs are missing, this script generates them for the current holdout.
+# The default pair file includes PAIRS in the filename so larger runs do not
+# accidentally reuse older smaller pair files.
 
 if [[ -n "${SCRATCH:-}" ]]; then
   export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRATCH/.cache/uv}"
@@ -50,18 +57,18 @@ TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 HOLDOUT_FAMILY="${HOLDOUTS[$TASK_ID]}"
 
 SFT_METHOD_NAME="${SFT_METHOD_NAME:-gpt_phase_augmented}"
-DPO_METHOD_NAME="${DPO_METHOD_NAME:-gpt_dpo}"
+DPO_METHOD_NAME="${DPO_METHOD_NAME:-gpt_dpo_10ep_100k}"
 CHECKPOINT="${CHECKPOINT:-$SLURM_OUTPUT_ROOT/models/$RUN_DATASET/${SFT_METHOD_NAME}_holdout_$HOLDOUT_FAMILY/best.pt}"
 SPLITS_DIR="$GENERATED_ROOT/$DATASET/splits"
 AUGMENT_CSV="$GENERATED_ROOT/$AUGMENT_DATASET/raw.csv"
-PAIRS_PATH="${PAIRS_PATH:-$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs.jsonl}"
-PAIRS="${PAIRS:-50000}"
+PAIRS="${PAIRS:-100000}"
+PAIRS_PATH="${PAIRS_PATH:-$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs_${PAIRS}.jsonl}"
 MAX_TRIES="${MAX_TRIES:-16}"
 INVALID_WEIGHT="${INVALID_WEIGHT:-0.9}"
 VALID_MISMATCH_WEIGHT="${VALID_MISMATCH_WEIGHT:-0.1}"
 AUGMENT_LIMIT="${AUGMENT_LIMIT:-20000}"
 
-EPOCHS="${EPOCHS:-2}"
+EPOCHS="${EPOCHS:-10}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 LR="${LR:-5e-6}"
 BETA="${BETA:-0.1}"

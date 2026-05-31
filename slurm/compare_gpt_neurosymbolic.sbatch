@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-ns-compare
+#SBATCH --array=0-2
 #SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
@@ -17,18 +18,16 @@ set -euo pipefail
 # Compare bare GPT next-step predictions with the neurosymbolic hard and shaped
 # decoding heads.
 #
-# Default checkpoint assumes the GPT decoder was trained with:
-#   sbatch --array=1 slurm/train_decoders.sbatch
+# Default checkpoint assumes the pre-DPO SFT GPT was trained with:
+#   sbatch slurm/train_gpt_phase_augmented.sbatch
 #
 # Submit:
 #   sbatch slurm/compare_gpt_neurosymbolic.sbatch
 #
 # Common overrides:
-#   DATASET=valid_s005k
-#   HOLDOUT_FAMILY=ic
+#   DATASET=valid_s100k_augmented_s050k
+#   METHOD_NAME=gpt_phase_augmented
 #   VIEW=ood
-#   CHECKPOINT=outputs/models/valid_s005k/gpt_decoder_holdout_ic/best.pt
-#   OUTPUT=outputs/neurosymbolic/valid_s005k/holdout_ic_ood.jsonl
 #   LIMIT=100              # optional smoke cap
 #   K=5
 #   RUNNER=srun
@@ -47,13 +46,17 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 source slurm/setup_uv.sh
 
-DATASET="${DATASET:-valid_s005k}"
-HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
+DATASET="${DATASET:-valid_s100k_augmented_s050k}"
+METHOD_NAME="${METHOD_NAME:-gpt_phase_augmented}"
+HOLDOUTS=(mosfet igbt ic)
+TASK_ID="${SLURM_ARRAY_TASK_ID:-2}"
+HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-${HOLDOUTS[$TASK_ID]}}"
 VIEW="${VIEW:-ood}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
 SLURM_OUTPUT_ROOT="${SLURM_OUTPUT_ROOT:-outputs}"
-CHECKPOINT="${CHECKPOINT:-$SLURM_OUTPUT_ROOT/models/$DATASET/gpt_decoder_holdout_$HOLDOUT_FAMILY/best.pt}"
+CHECKPOINT="${CHECKPOINT:-$SLURM_OUTPUT_ROOT/models/$DATASET/${METHOD_NAME}_holdout_$HOLDOUT_FAMILY/best.pt}"
 OUTPUT="${OUTPUT:-$SLURM_OUTPUT_ROOT/neurosymbolic/$DATASET/holdout_${HOLDOUT_FAMILY}_${VIEW}.jsonl}"
+EVAL_FAMILY_MODE="${EVAL_FAMILY_MODE:-holdout_unknown}"
 K="${K:-5}"
 RUNNER="${RUNNER:-srun}"
 
@@ -65,7 +68,11 @@ ARGS=(
   --holdout-family "$HOLDOUT_FAMILY"
   --view "$VIEW"
   --eval-root "$EVAL_ROOT"
+  --preds-root "$SLURM_OUTPUT_ROOT/preds"
+  --metrics-root "$SLURM_OUTPUT_ROOT/metrics"
   --output "$OUTPUT"
+  --method-prefix "$METHOD_NAME"
+  --eval-family-mode "$EVAL_FAMILY_MODE"
   --k "$K"
   --device cuda
 )

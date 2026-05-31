@@ -13,8 +13,10 @@ import torch
 from zero_hack import PROJECT_ROOT
 from zero_hack.data import FAMILY_TOKENS, Vocabulary
 from zero_hack.eval import io
+from zero_hack.eval.score import score_task
 from zero_hack.models.common import pick_device
 from zero_hack.models.gpt.model import GPTConfig, GPTNextStepModel
+from zero_hack.models.gpt.train import EVAL_FAMILY_MODES, _model_family_for_eval
 from zero_hack.models.neurosymbolic.decoding import shape_logits, topk_steps
 
 
@@ -75,6 +77,11 @@ def _predict_all_heads(
     }
 
 
+def _metric_method_name(prefix: str, head: str) -> str:
+    suffix = {"none": "bare", "hard": "ns_hard", "shaped": "ns_shaped"}[head]
+    return f"{prefix}_{suffix}" if prefix else suffix
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True, help="Path to a GPT checkpoint .pt file.")
@@ -83,13 +90,22 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="eval_input_valid.csv path. Defaults to the dataset/holdout/view eval path.",
     )
-    parser.add_argument("--dataset", default="valid_s005k")
+    parser.add_argument("--dataset", default="valid_s100k_augmented_s050k")
     parser.add_argument("--holdout-family", choices=("mosfet", "igbt", "ic"), default="ic")
     parser.add_argument("--view", choices=("id", "ood"), default="ood")
     parser.add_argument("--eval-root", default=str(PROJECT_ROOT / "data" / "eval"))
+    parser.add_argument("--preds-root", default=str(PROJECT_ROOT / "outputs" / "preds"))
+    parser.add_argument("--metrics-root", default=str(PROJECT_ROOT / "outputs" / "metrics"))
     parser.add_argument(
         "--output",
-        default=str(PROJECT_ROOT / "outputs" / "neurosymbolic" / "gpt_compare.jsonl"),
+        default=None,
+        help="Detailed JSONL comparison path. Defaults under outputs/neurosymbolic/.",
+    )
+    parser.add_argument("--method-prefix", default="gpt_phase_augmented")
+    parser.add_argument(
+        "--eval-family-mode",
+        choices=EVAL_FAMILY_MODES,
+        default="holdout_unknown",
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--k", type=int, default=5)
@@ -114,25 +130,42 @@ def main() -> None:
     if args.limit is not None:
         rows = rows[: args.limit]
 
-    output = Path(args.output)
+    output = (
+        Path(args.output)
+        if args.output
+        else Path(PROJECT_ROOT)
+        / "outputs"
+        / "neurosymbolic"
+        / args.dataset
+        / f"holdout_{args.holdout_family}_{args.view}.jsonl"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
+    pred_rows = {"none": [], "hard": [], "shaped": []}
     changed = 0
     with output.open("w", encoding="utf-8") as handle:
         for row in rows:
+            eval_family = _model_family_for_eval(
+                row["family"],
+                holdout_family=args.holdout_family,
+                eval_family_mode=args.eval_family_mode,
+            )
             heads = _predict_all_heads(
                 model,
                 vocabulary,
-                family=row["family"],
+                family=eval_family,
                 prefix=row["partial_sequence"],
                 k=args.k,
                 device=device,
             )
+            for head, ranks in heads.items():
+                pred_rows[head].append({"example_id": row["example_id"], "ranks": ranks})
             changed += int(
                 heads["none"][:1] != heads["hard"][:1] or heads["hard"][:1] != heads["shaped"][:1]
             )
             record: dict[str, Any] = {
                 "example_id": row["example_id"],
                 "family": row["family"],
+                "model_family": eval_family,
                 "prefix_len": len(row["partial_sequence"]),
                 "bare_topk": heads["none"],
                 "hard_topk": heads["hard"],
@@ -142,6 +175,43 @@ def main() -> None:
 
     print(f"wrote {len(rows)} comparisons to {output}")
     print(f"top1 changed by at least one head for {changed}/{len(rows)} examples")
+
+    if args.limit is not None:
+        print("skip metrics: --limit was set")
+        return
+
+    eval_dir = eval_input.parent
+    for head, predictions in pred_rows.items():
+        method_name = _metric_method_name(args.method_prefix, head)
+        pred_dir = (
+            Path(args.preds_root)
+            / args.dataset
+            / f"holdout_{args.holdout_family}"
+            / args.view
+            / method_name
+        )
+        pred_path = pred_dir / "nextstep.csv"
+        io.write_next_step_predictions(pred_path, predictions)
+
+        metrics = score_task(
+            "next_step",
+            ground_truth=eval_dir / "nextstep_truth.csv",
+            predictions=pred_path,
+            eval_input=eval_dir / "eval_input_valid.csv",
+        )
+        metrics_dir = (
+            Path(args.metrics_root)
+            / args.dataset
+            / f"holdout_{args.holdout_family}"
+            / args.view
+            / method_name
+        )
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        (metrics_dir / "next_step.json").write_text(
+            json.dumps(metrics, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"{method_name}: {metrics.get('all', metrics)}")
 
 
 if __name__ == "__main__":

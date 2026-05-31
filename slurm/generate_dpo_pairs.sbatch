@@ -8,7 +8,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output=outputs/slurm/%x_%A_%a.out
 #SBATCH --error=outputs/slurm/%x_%A_%a.err
 
@@ -19,8 +19,11 @@ set -euo pipefail
 # Submit:
 #   sbatch slurm/generate_dpo_pairs.sbatch
 #
+# Defaults:
+#   PAIRS=100000
+#
 # Outputs:
-#   data/generated/dpo_pairs/<run_dataset>/holdout_<family>/pairs.jsonl
+#   data/generated/dpo_pairs/<run_dataset>/holdout_<family>/pairs_<pairs>.jsonl
 
 if [[ -n "${SCRATCH:-}" ]]; then
   export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRATCH/.cache/uv}"
@@ -41,7 +44,7 @@ AUGMENT_DATASET="${AUGMENT_DATASET:-augmented_s050k}"
 RUN_DATASET="${RUN_DATASET:-${DATASET}_augmented_s050k}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 DPO_ROOT="${DPO_ROOT:-data/generated/dpo_pairs}"
-PAIRS="${PAIRS:-50000}"
+PAIRS="${PAIRS:-100000}"
 MAX_TRIES="${MAX_TRIES:-16}"
 INVALID_WEIGHT="${INVALID_WEIGHT:-0.9}"
 VALID_MISMATCH_WEIGHT="${VALID_MISMATCH_WEIGHT:-0.1}"
@@ -53,7 +56,7 @@ TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 HOLDOUT_FAMILY="${HOLDOUTS[$TASK_ID]}"
 SPLITS_DIR="$GENERATED_ROOT/$DATASET/splits"
 AUGMENT_CSV="$GENERATED_ROOT/$AUGMENT_DATASET/raw.csv"
-OUT="$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs.jsonl"
+OUT="$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs_${PAIRS}.jsonl"
 
 mkdir -p outputs/slurm "$(dirname "$OUT")"
 
