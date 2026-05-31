@@ -41,7 +41,11 @@ AUGMENT_DATASET="${AUGMENT_DATASET:-augmented_s050k}"
 RUN_DATASET="${RUN_DATASET:-${DATASET}_augmented_s050k}"
 GENERATED_ROOT="${GENERATED_ROOT:-data/generated}"
 DPO_ROOT="${DPO_ROOT:-data/generated/dpo_pairs}"
-PAIRS="${PAIRS:-100000}"
+PAIRS="${PAIRS:-50000}"
+MAX_TRIES="${MAX_TRIES:-16}"
+INVALID_WEIGHT="${INVALID_WEIGHT:-0.9}"
+VALID_MISMATCH_WEIGHT="${VALID_MISMATCH_WEIGHT:-0.1}"
+AUGMENT_LIMIT="${AUGMENT_LIMIT:-20000}"
 RUNNER="${RUNNER:-srun}"
 
 HOLDOUTS=(mosfet igbt ic)
@@ -79,8 +83,12 @@ time "$RUNNER" uv run python scripts/generate_dpo_pairs.py \
   --splits-dir "$SPLITS_DIR" \
   --holdout-family "$HOLDOUT_FAMILY" \
   --augment-train-csv "$AUGMENT_CSV" \
+  --augment-limit "$AUGMENT_LIMIT" \
   --augment-family-mode unknown \
   --pairs "$PAIRS" \
+  --invalid-weight "$INVALID_WEIGHT" \
+  --valid-mismatch-weight "$VALID_MISMATCH_WEIGHT" \
+  --max-tries "$MAX_TRIES" \
   --out "$OUT" \
   --seed "${DPO_SEED:-1729}"
 

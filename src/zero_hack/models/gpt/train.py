@@ -41,6 +41,7 @@ from zero_hack.models.phase_loss import NextPhaseLoss
 MODEL_NAME = "gpt_decoder"
 SEQUENCE_TERMINATOR = "SHIP LOT"
 EVAL_FAMILY_MODES = ("as_given", "holdout_unknown", "all_unknown")
+VARIANT_EVAL_SOURCE = "industrial_variants_with_generated_rule_anomalies"
 
 
 def build_model(bundle: DataBundle, config: GPTConfig) -> GPTNextStepModel:
@@ -135,6 +136,73 @@ def _augment_training_records(
     records["train"] = [*records["train"], *filtered]
     return DataBundle(
         vocabulary=build_vocabulary(records["train"]),
+        records=records,
+        train_families=bundle.train_families,
+        holdout_family=bundle.holdout_family,
+    )
+
+
+def _limit_training_records(
+    bundle: DataBundle,
+    *,
+    total: int | None,
+    seed: int,
+) -> DataBundle:
+    if total is None:
+        return bundle
+    if total <= 0:
+        raise ValueError("--train-samples must be positive")
+
+    train_records = bundle.records["train"]
+    if total >= len(train_records):
+        return bundle
+
+    by_family: dict[str, list[SequenceRecord]] = {}
+    for record in train_records:
+        by_family.setdefault(record.family, []).append(record)
+
+    families = sorted(by_family)
+    shuffled = {}
+    for index, family in enumerate(families):
+        records = list(by_family[family])
+        random.Random(seed + index).shuffle(records)
+        shuffled[family] = records
+
+    selected_counts = {family: total // len(families) for family in families}
+    for family in families[: total % len(families)]:
+        selected_counts[family] += 1
+    selected_counts = {
+        family: min(selected_counts[family], len(shuffled[family])) for family in families
+    }
+
+    remaining = total - sum(selected_counts.values())
+    while remaining > 0:
+        progressed = False
+        for family in families:
+            if selected_counts[family] < len(shuffled[family]):
+                selected_counts[family] += 1
+                remaining -= 1
+                progressed = True
+                if remaining == 0:
+                    break
+        if not progressed:
+            break
+
+    limited_train = [
+        record for family in families for record in shuffled[family][: selected_counts[family]]
+    ]
+    random.Random(seed).shuffle(limited_train)
+
+    records = dict(bundle.records)
+    records["train"] = limited_train
+
+    vocab_records = list(limited_train)
+    if bundle.holdout_family is not None:
+        holdout_split = f"test_{bundle.holdout_family}"
+        vocab_records.extend(records.get(holdout_split, []))
+
+    return DataBundle(
+        vocabulary=build_vocabulary(vocab_records),
         records=records,
         train_families=bundle.train_families,
         holdout_family=bundle.holdout_family,
@@ -480,6 +548,26 @@ def _default_views(eval_root: Path, dataset: str, holdout_family: str) -> list[s
     return ["id", "ood"]
 
 
+def _assert_variant_eval_set(eval_dir: Path, tasks: tuple[str, ...]) -> None:
+    if not {"next_step", "completion"}.intersection(tasks):
+        return
+
+    metadata_path = eval_dir / "metadata.json"
+    if not metadata_path.exists():
+        raise SystemExit(
+            f"Missing eval metadata for Task 1/2: {metadata_path}. "
+            "Regenerate eval sets with scripts/make_all_eval_sets.py."
+        )
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    source = metadata.get("source")
+    if source != VARIANT_EVAL_SOURCE:
+        raise SystemExit(
+            f"Task 1/2 eval set must come from Industrial *_variants.csv files; "
+            f"{metadata_path} has source={source!r}."
+        )
+
+
 def _score_predictions(
     *,
     eval_dir: Path,
@@ -622,6 +710,7 @@ def _evaluate_eval_sets(
         if not eval_dir.exists():
             print(f"skip eval view={view}: missing {eval_dir}")
             continue
+        _assert_variant_eval_set(eval_dir, tasks)
 
         pred_dir = preds_root / dataset / f"holdout_{holdout_family}" / view / method_name
         metrics_dir = metrics_root / dataset / f"holdout_{holdout_family}" / view / method_name
@@ -724,6 +813,12 @@ def parse_args() -> argparse.Namespace:
         help="How to map FAMILY labels from --augment-train-csv.",
     )
     parser.add_argument("--limit-per-family", type=int, default=None)
+    parser.add_argument(
+        "--train-samples",
+        type=int,
+        default=None,
+        help="Total train records to keep after holdout filtering, stratified by train family.",
+    )
 
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--patience", type=int, default=5)
@@ -768,6 +863,7 @@ def main() -> None:
         holdout_family=args.holdout_family,
         limit_per_family=args.limit_per_family,
     )
+    bundle = _limit_training_records(bundle, total=args.train_samples, seed=args.seed)
     if args.augment_train_csv:
         augmentation = _load_augmentation_records(
             args.augment_train_csv,

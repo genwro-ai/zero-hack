@@ -55,7 +55,11 @@ CHECKPOINT="${CHECKPOINT:-$SLURM_OUTPUT_ROOT/models/$RUN_DATASET/${SFT_METHOD_NA
 SPLITS_DIR="$GENERATED_ROOT/$DATASET/splits"
 AUGMENT_CSV="$GENERATED_ROOT/$AUGMENT_DATASET/raw.csv"
 PAIRS_PATH="${PAIRS_PATH:-$DPO_ROOT/$RUN_DATASET/holdout_$HOLDOUT_FAMILY/pairs.jsonl}"
-PAIRS="${PAIRS:-100000}"
+PAIRS="${PAIRS:-50000}"
+MAX_TRIES="${MAX_TRIES:-16}"
+INVALID_WEIGHT="${INVALID_WEIGHT:-0.9}"
+VALID_MISMATCH_WEIGHT="${VALID_MISMATCH_WEIGHT:-0.1}"
+AUGMENT_LIMIT="${AUGMENT_LIMIT:-20000}"
 
 EPOCHS="${EPOCHS:-2}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
@@ -80,8 +84,12 @@ if [[ ! -s "$PAIRS_PATH" || "${FORCE_DPO_PAIRS:-0}" == "1" ]]; then
     --splits-dir "$SPLITS_DIR" \
     --holdout-family "$HOLDOUT_FAMILY" \
     --augment-train-csv "$AUGMENT_CSV" \
+    --augment-limit "$AUGMENT_LIMIT" \
     --augment-family-mode unknown \
     --pairs "$PAIRS" \
+    --invalid-weight "$INVALID_WEIGHT" \
+    --valid-mismatch-weight "$VALID_MISMATCH_WEIGHT" \
+    --max-tries "$MAX_TRIES" \
     --out "$PAIRS_PATH" \
     --seed "${DPO_SEED:-1729}"
 fi

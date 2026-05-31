@@ -27,7 +27,7 @@ set -euo pipefail
 #   RUN_NAMES=lstm sbatch slurm/eval_lstm_anomaly.sbatch
 #
 # Optional environment overrides:
-#   DATASET=valid_s005k
+#   DATASET=valid_s100k
 #   HOLDOUT_FAMILY=ic
 #   MODEL_ROOT=outputs/models
 #   PREDS_ROOT=outputs/preds
@@ -51,7 +51,7 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 source slurm/setup_uv.sh
 
-DATASET="${DATASET:-valid_s005k}"
+DATASET="${DATASET:-valid_s100k}"
 HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 MODEL_ROOT="${MODEL_ROOT:-outputs/models}"
 PREDS_ROOT="${PREDS_ROOT:-outputs/preds}"

@@ -37,13 +37,15 @@ set -euo pipefail
 #   PREDS_ROOT=outputs/preds      # where method predictions are written
 #   METRICS_ROOT=outputs/metrics  # where next-step reports are written
 #   EPOCHS=10
-#   BATCH_SIZE=128
+#   BATCH_SIZE=256
 #   LR=3e-3
-#   MAX_CONTEXT=192
+#   MAX_CONTEXT=128
+#   MAX_TRAIN_BATCHES=1200         # cap train batches per epoch
+#   MAX_EVAL_BATCHES=200           # cap valid batches per epoch
 #   K=3                           # top-k for the next-step report
 #   SS_MAX_PROB=0.25              # scheduled-sampling max own-prediction prob
 #   SS_SCHEDULE=linear            # linear | constant
-#   LIMIT_PER_FAMILY=             # cap records per family (smoke runs)
+#   LIMIT_PER_FAMILY=10000        # 20k train records for a two-family holdout
 #   HOLDOUT_FAMILY=ic             # mosfet | igbt | ic (leave-one-family-out)
 #   EXTRA_ARGS="--device cuda"    # appended verbatim to the trainer CLI
 
@@ -71,14 +73,17 @@ MODEL_ROOT="${MODEL_ROOT:-outputs/models}"
 PREDS_ROOT="${PREDS_ROOT:-outputs/preds}"
 METRICS_ROOT="${METRICS_ROOT:-outputs/metrics}"
 EPOCHS="${EPOCHS:-10}"
-BATCH_SIZE="${BATCH_SIZE:-128}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
 LR="${LR:-3e-3}"
-MAX_CONTEXT="${MAX_CONTEXT:-192}"
+MAX_CONTEXT="${MAX_CONTEXT:-128}"
 K="${K:-3}"
 SS_MAX_PROB="${SS_MAX_PROB:-0.25}"
 SS_SCHEDULE="${SS_SCHEDULE:-linear}"
 RUNNER="${RUNNER:-srun}"
 HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
+LIMIT_PER_FAMILY="${LIMIT_PER_FAMILY:-10000}"
+MAX_TRAIN_BATCHES="${MAX_TRAIN_BATCHES:-1200}"
+MAX_EVAL_BATCHES="${MAX_EVAL_BATCHES:-200}"
 
 SPLITS_DIR="${SPLITS_ROOT}/${DATASET}/splits"
 RUN_NAME="lstm_${RUN}"
@@ -109,8 +114,16 @@ if [[ "$RUN" == "scheduled_sampling" ]]; then
   ARGS+=(--scheduled-sampling --ss-max-prob "$SS_MAX_PROB" --ss-schedule "$SS_SCHEDULE")
 fi
 
-if [[ -n "${LIMIT_PER_FAMILY:-}" ]]; then
+if [[ -n "$LIMIT_PER_FAMILY" ]]; then
   ARGS+=(--limit-per-family "$LIMIT_PER_FAMILY")
+fi
+
+if [[ -n "$MAX_TRAIN_BATCHES" ]]; then
+  ARGS+=(--max-train-batches "$MAX_TRAIN_BATCHES")
+fi
+
+if [[ -n "$MAX_EVAL_BATCHES" ]]; then
+  ARGS+=(--max-eval-batches "$MAX_EVAL_BATCHES")
 fi
 
 if [[ -n "${EXTRA_ARGS:-}" ]]; then
