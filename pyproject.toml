@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.6",
     "torch>=2.5.1",
+    "vlmc>=0.2.0",
 ]
 
 # Use the CUDA (cu121) wheels only on Linux (the GPU cluster). On macOS the

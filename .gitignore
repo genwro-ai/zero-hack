@@ -216,6 +216,7 @@ outputs/preds*/
 outputs/slurm/*
 !outputs/slurm/.gitkeep
 outputs/slurm_runs/
+resultsdirectory/
 
 # Ruff stuff:
 .ruff_cache/

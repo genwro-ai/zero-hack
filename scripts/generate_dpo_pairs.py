@@ -36,7 +36,7 @@ def _rule_invalid_suffix(
 
     for rule in rules:
         for _ in range(max_tries):
-            corrupted = corrupt_steps(list(record.steps), rng, target_rule=rule)
+            corrupted = corrupt_steps(list(record.steps), rng, max_tries=1, target_rule=rule)
             if corrupted is None:
                 continue
             corrupted_steps, observed_rule = corrupted
@@ -57,10 +57,9 @@ def _valid_mismatch_suffix(
     max_tries: int,
 ) -> list[str] | None:
     prefix = list(record.steps[:cut])
-    candidates = list(records)
-    rng.shuffle(candidates)
 
-    for other in candidates[:max_tries]:
+    for _ in range(max_tries):
+        other = rng.choice(records)
         if other.sequence_id == record.sequence_id or len(other.steps) <= cut + 1:
             continue
         rejected = list(other.steps[cut:])
@@ -129,6 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--holdout-family", choices=FAMILIES, required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--augment-train-csv", default=None)
+    parser.add_argument("--augment-limit", type=int, default=None)
     parser.add_argument(
         "--augment-family-mode",
         choices=("unknown", "preserve-known"),
@@ -141,7 +141,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-prefix-fraction", type=float, default=0.75)
     parser.add_argument("--invalid-weight", type=float, default=0.7)
     parser.add_argument("--valid-mismatch-weight", type=float, default=0.3)
-    parser.add_argument("--max-tries", type=int, default=64)
+    parser.add_argument("--max-tries", type=int, default=16)
+    parser.add_argument("--progress-every", type=int, default=10_000)
     return parser.parse_args()
 
 
@@ -157,6 +158,8 @@ def main() -> None:
         augmentation = _load_augmentation_records(
             args.augment_train_csv,
             family_mode=args.augment_family_mode,
+            limit=args.augment_limit,
+            seed=args.seed,
         )
         bundle = _augment_training_records(bundle, augmentation)
 
@@ -179,16 +182,29 @@ def main() -> None:
             handle.write(json.dumps(pair) + "\n")
             counts[pair["negative_type"]] = counts.get(pair["negative_type"], 0) + 1
             written += 1
+            if args.progress_every and written % args.progress_every == 0:
+                print(
+                    json.dumps(
+                        {
+                            "pairs_written": written,
+                            "attempts": attempts,
+                            "negative_type_counts": counts,
+                        }
+                    ),
+                    flush=True,
+                )
 
     metadata = {
         "splits_dir": str(Path(args.splits_dir)),
         "holdout_family": args.holdout_family,
         "train_families": list(bundle.train_families),
         "augment_train_csv": args.augment_train_csv,
+        "augment_limit": args.augment_limit,
         "pairs_requested": args.pairs,
         "pairs_written": written,
         "attempts": attempts,
         "negative_type_counts": counts,
+        "max_tries": args.max_tries,
         "seed": args.seed,
     }
     (out.with_suffix(out.suffix + ".meta.json")).write_text(

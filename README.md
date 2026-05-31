@@ -75,8 +75,10 @@ model is compared on the same split artifacts.
 
 - **N-gram** (`models/ngram/`): family-conditioned counting model (default
   5-gram) with stupid-backoff to shorter contexts. The main classic baseline.
-- **VOMM** (`models/vomm/`): variable-order Markov model using the longest
-  available suffix context before backing off.
+- **VLMC** (`models/vlmc/`): wrapper around
+  [`antonio-leitao/vlmc`](https://github.com/antonio-leitao/vlmc), using a
+  global variable-length Markov chain with lightweight family-token
+  conditioning.
 
 All expose `predict_topk` (next step), greedy autoregressive completion, and
 `score_sequence` (log-likelihood, used as a soft anomaly score). Fit and
@@ -131,7 +133,7 @@ uv run python scripts/make_all_eval_sets.py
 uv run python scripts/run_holdout_experiments.py \
   --datasets valid_s005k \
   --holdout-families ic \
-  --models ngram vomm \
+  --models ngram vlmc \
   --views id ood
 
 # Score a submission against ground truth (mirrors the organizer CLI)

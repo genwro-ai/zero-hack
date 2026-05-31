@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,6 @@ from zero_hack.data import (
     load_sequence_records,
     make_torch_dataloader,
 )
-from zero_hack.models.topk import TopKAccumulator
 
 DEFAULT_SPLITS_DIR = PROJECT_ROOT / "data" / "generated" / "valid_s005k" / "splits"
 DEFAULT_METRICS_DIR = PROJECT_ROOT / "outputs" / "metrics"
@@ -296,7 +296,7 @@ def evaluate_model(
     max_batches: int | None = None,
 ) -> dict[str, dict[str, float]]:
     model.eval()
-    acc = TopKAccumulator(k=k)
+    totals: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     for step, batch in enumerate(loader):
         if max_batches is not None and step >= max_batches:
             break
@@ -308,8 +308,29 @@ def evaluate_model(
         logits = model(input_ids, attention_mask)
         topk = torch.topk(logits, k=min(k, logits.size(-1)), dim=-1).indices.cpu()
         for i in range(len(targets)):
-            acc.update(int(targets[i]), topk[i].tolist(), group=families[i])
-    return acc.summary()
+            gold = int(targets[i])
+            ranked = topk[i].tolist()
+            is_top1 = bool(ranked) and ranked[0] == gold
+            is_topk = gold in ranked[:k]
+            for group in ("all", families[i]):
+                counts = totals[group]
+                counts[0] += 1
+                counts[1] += int(is_top1)
+                counts[2] += int(is_topk)
+    return {
+        group: _topk_rates(total, top1, topk_count, k)
+        for group, (total, top1, topk_count) in sorted(totals.items())
+    }
+
+
+def _topk_rates(total: int, top1: int, topk: int, k: int) -> dict[str, float]:
+    if total == 0:
+        return {"n": 0, "top1": 0.0, f"top{k}": 0.0}
+    return {
+        "n": total,
+        "top1": round(top1 / total, 4),
+        f"top{k}": round(topk / total, 4),
+    }
 
 
 def report_splits(bundle: DataBundle) -> tuple[str, ...]:

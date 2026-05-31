@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-split
-#SBATCH --array=0-3
+#SBATCH --array=0-2
 #SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
@@ -51,7 +51,6 @@ source slurm/setup_uv.sh
 
 DATASETS=(
   valid_s005k
-  valid_s010k
   valid_s020k
   valid_s100k
 )

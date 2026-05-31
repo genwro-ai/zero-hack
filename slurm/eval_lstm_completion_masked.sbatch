@@ -36,7 +36,7 @@ set -euo pipefail
 #   sbatch --array=1 slurm/eval_lstm_completion_masked.sbatch
 #
 # Optional environment overrides:
-#   DATASET=valid_s005k
+#   DATASET=valid_s100k
 #   HOLDOUT_FAMILY=ic
 #   EVAL_ROOT=data/eval
 #   MODEL_ROOT=outputs/models
@@ -63,7 +63,7 @@ RUNS=(teacher_forcing scheduled_sampling)
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 RUN="${RUNS[$TASK_ID]}"
 
-DATASET="${DATASET:-valid_s005k}"
+DATASET="${DATASET:-valid_s100k}"
 HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
 MODEL_ROOT="${MODEL_ROOT:-outputs/models}"

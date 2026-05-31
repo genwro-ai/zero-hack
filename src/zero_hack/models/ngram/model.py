@@ -5,7 +5,6 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 
 from zero_hack.data import SequenceRecord
-from zero_hack.models.topk import TopKAccumulator
 
 BOS_TOKEN = "<BOS>"
 SCORE_FLOOR = 1e-9
@@ -56,21 +55,6 @@ class NGramModel:
             scores = self._scores(family, steps[:position])
             logprob += math.log(max(scores.get(next_step, 0.0), SCORE_FLOOR))
         return logprob
-
-    def evaluate(
-        self,
-        records: list[SequenceRecord],
-        vocabulary,
-        k: int = 3,
-    ) -> dict:
-        acc = TopKAccumulator(k=k)
-        for record in records:
-            for position, gold_step in enumerate(record.steps):
-                preds = self.predict_topk(record.family, record.steps[:position], k=k)
-                gold_id = vocabulary.token_to_id.get(gold_step, vocabulary.unk_id)
-                pred_ids = [vocabulary.token_to_id.get(step, vocabulary.unk_id) for step in preds]
-                acc.update(gold_id, pred_ids, group=record.family)
-        return acc.summary()
 
     def _scores(self, family: str, prefix_steps: Iterable[str]) -> dict[str, float]:
         table = self.by_family.get(family)

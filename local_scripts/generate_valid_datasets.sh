@@ -4,7 +4,7 @@ set -euo pipefail
 # Generate valid Industrial AI process-route datasets for all requested sizes
 # and families. The generator validates each generated sequence before writing.
 
-SIZES="${SIZES:-5000 10000 20000 100000 500000 1000000}"
+SIZES="${SIZES:-5000 20000 100000}"
 FAMILIES="${FAMILIES:-mosfet igbt ic}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 GENERATOR="${GENERATOR:-data/industrial/generate_sequences.py}"

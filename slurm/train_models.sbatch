@@ -34,10 +34,12 @@ set -euo pipefail
 #   METRICS_ROOT=outputs/metrics
 #   HOLDOUT_FAMILY=ic
 #   EPOCHS=10
-#   BATCH_SIZE=128
+#   BATCH_SIZE=256
 #   LR=3e-3
-#   MAX_CONTEXT=192
-#   LIMIT_PER_FAMILY=            # cap records per family (smoke runs)
+#   MAX_CONTEXT=128
+#   MAX_TRAIN_BATCHES=1200       # cap train batches per epoch
+#   MAX_EVAL_BATCHES=200         # cap valid batches per epoch
+#   LIMIT_PER_FAMILY=10000       # 20k train records for a two-family holdout
 #   K=3                          # top-k for the eval summary
 #   EXTRA_ARGS="--device cuda"   # appended verbatim to the trainer CLI
 #   UV_CACHE_DIR=$SCRATCH/.cache/uv
@@ -69,12 +71,15 @@ EVAL_ROOT="${EVAL_ROOT:-data/eval}"
 PREDS_ROOT="${PREDS_ROOT:-outputs/preds}"
 METRICS_ROOT="${METRICS_ROOT:-outputs/metrics}"
 EPOCHS="${EPOCHS:-10}"
-BATCH_SIZE="${BATCH_SIZE:-128}"
+BATCH_SIZE="${BATCH_SIZE:-256}"
 LR="${LR:-3e-3}"
-MAX_CONTEXT="${MAX_CONTEXT:-192}"
+MAX_CONTEXT="${MAX_CONTEXT:-128}"
 K="${K:-3}"
 RUNNER="${RUNNER:-srun}"
 HOLDOUT_FAMILY="${HOLDOUT_FAMILY:-ic}"
+LIMIT_PER_FAMILY="${LIMIT_PER_FAMILY:-10000}"
+MAX_TRAIN_BATCHES="${MAX_TRAIN_BATCHES:-1200}"
+MAX_EVAL_BATCHES="${MAX_EVAL_BATCHES:-200}"
 
 SPLITS_DIR="${OUTPUT_ROOT}/${DATASET}/splits"
 METHOD_NAME="$MODEL"
@@ -102,8 +107,16 @@ ARGS=(
   --k "$K"
 )
 
-if [[ -n "${LIMIT_PER_FAMILY:-}" ]]; then
+if [[ -n "$LIMIT_PER_FAMILY" ]]; then
   ARGS+=(--limit-per-family "$LIMIT_PER_FAMILY")
+fi
+
+if [[ -n "$MAX_TRAIN_BATCHES" ]]; then
+  ARGS+=(--max-train-batches "$MAX_TRAIN_BATCHES")
+fi
+
+if [[ -n "$MAX_EVAL_BATCHES" ]]; then
+  ARGS+=(--max-eval-batches "$MAX_EVAL_BATCHES")
 fi
 
 if [[ -n "${EXTRA_ARGS:-}" ]]; then

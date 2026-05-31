@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Create train/valid/test splits for all generated dataset sizes.
 
-DATASETS="${DATASETS:-valid_s005k valid_s010k valid_s020k valid_s100k}"
+DATASETS="${DATASETS:-valid_s005k valid_s020k valid_s100k}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-data/generated}"
 INDUSTRIAL_DIR="${INDUSTRIAL_DIR:-data/industrial}"
 INCLUDE_INDUSTRIAL="${INCLUDE_INDUSTRIAL:-1}"
@@ -27,7 +27,7 @@ Options:
 
 Environment variables with the same names are also supported:
   FORCE=1
-  DATASETS="valid_s005k valid_s010k"
+  DATASETS="valid_s005k valid_s020k valid_s100k"
   FAMILIES="mosfet igbt ic"
   OUTPUT_ROOT=data/generated
   INDUSTRIAL_DIR=data/industrial
