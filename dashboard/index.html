@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zero-Hack · Industrial Process-Logic Benchmark</title>
+  <meta name="description" content="Benchmarking sequence models on semiconductor fabrication process logic — next-step prediction, sequence completion, and rule-violation anomaly detection across IC / MOSFET / IGBT families." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <span class="brand">gen<span class="wro">wro</span></span>
+    <span class="doc">ZERO-HACK · ZH-01</span>
+    <span class="status"><span class="led"></span>BENCHMARK</span>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#next-step">Next-step</a>
+      <a href="#completion">Completion</a>
+      <a href="#anomaly">Anomaly</a>
+      <a href="#examples">Examples</a>
+    </nav>
+  </header>
+
+  <div class="wrap">
+
+    <header class="masthead" id="overview">
+      <div class="mast-main">
+        <div class="eyebrow">Zero One Hack_01 · Industrial AI · Infineon</div>
+        <h1 style="margin-top:14px">Does the model <em>learn</em> the process — or memorize it?</h1>
+        <p class="lede">Classical vs. neural sequence models on real fab process flows.</p>
+        <div class="spec">
+          <span>FAMILIES&nbsp; <b>IC · MOSFET · IGBT</b></span>
+          <span>VOCAB&nbsp; <b id="spec-vocab">≈198</b></span>
+          <span>TASKS&nbsp; <b>3</b></span>
+          <span>MODELS&nbsp; <b id="spec-models">4</b></span>
+        </div>
+        <div class="badge-note"><span class="dot"></span> local holdout eval · official scorer pending</div>
+      </div>
+      <div class="mast-side">
+        <div id="hero-wafer"></div>
+        <div class="cap">wafer map · red = flagged anomaly</div>
+      </div>
+    </header>
+
+    <div class="ribbon">
+      <div class="rib-label">Canonical process flow · functional blocks</div>
+      <div id="hero-flow"></div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <section id="next-step" class="reveal">
+      <div class="sec-head"><span class="sec-num">01</span><h2>Next-step prediction</h2></div>
+      <p class="sec-lead">Both LSTM variants beat the classical baselines — by a real but modest margin.</p>
+      <div class="grid c2">
+        <div class="panel">
+          <div class="p-head"><div class="ht"><span class="fig">FIG.1A</span><h3>Top-1 accuracy</h3></div><span class="p-note" id="ns-note"></span></div>
+          <div id="ns-bar"></div>
+          <div class="legend">
+            <span><i class="swatch-baseline"></i> classical baseline</span>
+            <span><i class="swatch-accent"></i> trained / neural</span>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="p-head"><div class="ht"><span class="fig">FIG.1B</span><h3>Full metric table</h3></div><span class="p-note">— = not measured</span></div>
+          <div id="ns-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="completion" class="reveal">
+      <div class="sec-head"><span class="sec-num">02</span><h2>Sequence completion — the open problem</h2></div>
+      <p class="sec-lead">Every model emits process-valid flows, yet exact match stays near zero.</p>
+      <div class="grid c2">
+        <div class="panel">
+          <div class="p-head"><div class="ht"><span class="fig">FIG.2A</span><h3>Normalized edit distance</h3></div><span class="p-note" id="cp-note"></span></div>
+          <div id="cp-bar"></div>
+          <div class="legend"><span class="muted">lower is better · distance to the reference completion</span></div>
+        </div>
+        <div class="panel">
+          <div class="p-head"><div class="ht"><span class="fig">FIG.2B</span><h3>Full metric table</h3></div><span class="p-note">↓ lower better</span></div>
+          <div id="cp-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="anomaly" class="reveal">
+      <div class="sec-head"><span class="sec-num">03</span><h2>Anomaly detection</h2></div>
+      <p class="sec-lead">A classical likelihood threshold separates valid from rule-violating — perfectly on the local set.</p>
+      <div class="panel">
+        <div class="p-head"><div class="ht"><span class="fig">FIG.3A</span><h3>Classic detector · local eval</h3></div><span class="p-note">log-likelihood threshold · OOD family is the next milestone</span></div>
+        <div class="stat-row" id="an-stats"></div>
+      </div>
+    </section>
+
+    <section id="examples" class="reveal">
+      <div class="sec-head"><span class="sec-num">04</span><h2>Baseline vs. trained — identical inputs</h2></div>
+      <p class="sec-lead">Same input — classical baseline vs. trained LSTM.</p>
+      <div id="ex-nextstep"></div>
+      <h3 style="margin:24px 0 12px; font-size:17px; font-weight:600">Anomaly &amp; rule attribution</h3>
+      <div id="ex-anomaly"></div>
+    </section>
+
+    <footer>
+      <div class="cols">
+        <div>
+          <h4>genwro · Industrial AI</h4>
+          <p style="font-size:14px; color:var(--ink-soft)">Static benchmark dashboard — no backend,
+            one embedded data file, deploys to GitHub Pages. Figures from <code>REPORT.md</code>.</p>
+        </div>
+        <div>
+          <h4>Reproduce</h4>
+          <div class="repro mono">
+            <code>uv run python scripts/run_holdout_experiments.py</code><br/>
+            <code>uv run python scripts/export_dashboard_data.py</code>
+          </div>
+        </div>
+        <div>
+          <h4>Swap in real numbers</h4>
+          <p style="font-size:13.5px; color:var(--ink-soft)">Run the exporter once
+            <code>outputs/metrics/**</code> is populated — it rewrites <code>data.js</code> in place.</p>
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <script src="data.js"></script>
+  <script src="assets/js/charts.js"></script>
+  <script src="assets/js/render.js"></script>
+</body>
+</html>
