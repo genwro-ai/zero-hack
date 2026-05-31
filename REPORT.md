@@ -21,7 +21,7 @@ We built a synthetic process-grammar generator and trained compact sequence deco
 We model the process grammar behind MOSFET, IGBT, and IC fabrication flows (≈198-step vocabulary, ~115–150 steps/sequence, shared backbone + family-specific steps). Three scored tasks plus an OOD differentiator:
 
 - **Task 1 — Next step:** Top-1/3/5 accuracy, MRR.
-- **Task 2 — Completion:** exact match, normalized edit distance, token & block accuracy, **process-validity rate** of generated continuations.
+- **Task 2 — Completion:** exact match, normalized edit distance, token accuracy, and block accuracy.
 - **Task 3 — Anomaly:** accuracy, precision/recall/F1, ROC-AUC, rule-attribution accuracy.
 - **Task 4 — OOD:** leave-one-family-out — train on two families, evaluate on the unseen third.
 
@@ -31,9 +31,10 @@ We model the process grammar behind MOSFET, IGBT, and IC fabrication flows (≈1
 
 We used a small pipeline:
 
-- Generate more valid process flows from the provided grammar, plus separate
-  novel family eval sets for OOD checks. This should give the model more structure
-  than the three starter families alone.
+- Generate more valid process flows from the provided grammar, then evaluate on
+  fixed Industrial variant prefixes and fixed anomaly sets. This should give the
+  model more structure than the three starter families alone while keeping
+  evaluation reproducible.
 - Train compact GPT-style decoders for next-step prediction, then reuse the same
   conditional distribution for greedy completion and likelihood anomaly scoring.
 - Run an architecture sweep where ALiBi was the strongest signal for OOD
@@ -92,13 +93,16 @@ the neural models against.
 
 ### 1.1 Classic baselines
 
-These runs train on all three families and evaluate on ID test sets: 600
-examples for next-step and completion, 300 for anomaly. The 5-gram is the main
-classic reference.
+The classical side is intentionally small: n-gram and VLMC models trained on the
+same generated split files as the neural models. We search over n-gram orders
+`3/5/7` and smoothing values. The tuned 5-gram is the main ID reference, while
+the 7-gram is strongest for OOD next-step. Fixed holdout numbers are reported
+alongside the neural models in section 3.4.
 
 | Model | View | Task 1 Top-1 | Top-3 | MRR | Task 2 ExactMatch | Norm. edit dist | Task 3 F1 | ROC-AUC |
-|---|---|---|---|---|---|---|---|---|
-| N-gram (5, backoff) | ID | 0.7133 | 0.9967 | 0.8536 | 0.0050 | 0.2243 | 1.000 | 1.000 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 5-gram (tuned) | ID | 0.690 | 0.996 | 0.843 | 0.004 | 0.227 | 1.000 | 1.000 |
+| 7-gram (tuned) | OOD | 0.668 | 0.980 | 0.823 | 0.000 | 0.394 | 0.667 | 0.787 |
 
 ### 1.2 LSTM baseline
 
@@ -192,8 +196,8 @@ rank the next step, complete sequences, and produce likelihood scores for anomal
 detection. ALiBi gives a simple distance bias instead of relying only on learned
 absolute positions, so it is the cleanest architecture argument for variable
 prefix lengths and held-out-family generation. The causal transformer is better
-if we optimize only for OOD anomaly AUC, but GPT-ALiBi is the stronger all-task
-choice for our completion-focused story.
+if we optimize only for OOD anomaly AUC, but GPT-ALiBi is the stronger
+completion-focused choice in this sweep.
 
 **Naming.** From here on, rows labelled `gpt_bare`, `gpt_phase_augmented`,
 `gpt_phase_augmented_pl01`, and `gpt_dpo_10ep_100k` are successive stages of the
@@ -355,7 +359,7 @@ See [README.md](README.md) for the full data/eval layout.
 
 ## What worked / What didn't
 
-- **Worked:** Generating rule-valid sequences at scale (100k per family) with the validator as a backstop. Plain sequence likelihood is a near-perfect in-distribution anomaly detector, both for the 5-gram and GPT decoder (ROC-AUC near 1.0). The leak-free novel-family generator gives us an honest OOD set. Augmented SFT improves OOD anomaly ranking, and 10-epoch DPO on validity-labeled pairs sharply improves ID anomaly discrimination (AUC 0.981 to about 1.000). For ID next-step, the reported DPO model is competitive with or slightly above the tuned n-gram.
+- **Worked:** Generating rule-valid sequences at scale (100k per family) with the validator as a backstop. Plain sequence likelihood is a near-perfect in-distribution anomaly detector, both for the 5-gram and GPT decoder (ROC-AUC near 1.0). The fixed leave-one-family-out eval sets give us a clean ID/OOD split. Augmented SFT improves OOD anomaly ranking, and 10-epoch DPO on validity-labeled pairs sharply improves ID anomaly discrimination (AUC 0.981 to about 1.000). For ID next-step, the reported DPO model is competitive with or slightly above the tuned n-gram.
 - **Didn't:** OOD next-step and thresholded OOD anomaly detection. For Task 1 on the held-out family, the n-gram and bare GPT remain stronger than the augmented/DPO neural models, which suggests that our fine-tuning over-specialized the local transition distribution. For anomaly detection, the ID-tuned threshold does not transfer to an unseen family, so several runs collapse to predicting every OOD anomaly sample as one class: F1 falls to the all-positive baseline even when ROC-AUC still shows useful ranking. Positional encoding choice barely moved the ID metrics, so there was no clear winner and we picked ALiBi for its OOD completion. Scheduled sampling did not beat teacher forcing at this scale. Exact-match completion stays near zero, since the sequences are long and many continuations are equally valid.
 
 ## What we'd do with another 36 hours
