@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>genwro — Industrial AI (Infineon)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600&family=Raleway:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --red: #e41717;
+    --ink: #111111;
+    --ink-soft: #444444;
+    --line: #e6e6e6;
+    --muted: #8a8a8a;
+    --paper: #ffffff;
+    --wash: #faf8f8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    font-family: "Open Sans", sans-serif;
+    color: var(--ink);
+    background: #2a2a2a;
+    line-height: 1.55;
+  }
+
+  /* ---------- Slide frame ---------- */
+  .deck { display: flex; flex-direction: column; align-items: center; gap: 26px; padding: 40px 16px; }
+
+  .slide {
+    position: relative;
+    width: 1280px;
+    height: 720px;
+    background: var(--paper);
+    padding: 70px 88px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+  }
+
+  /* thin red spine on the left edge of every slide */
+  .slide::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 8px;
+    background: var(--red);
+  }
+
+  .kicker {
+    font-family: "Raleway", sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin-bottom: 22px;
+  }
+
+  h1 {
+    font-family: "Raleway", sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  h2 {
+    font-family: "Raleway", sans-serif;
+    font-weight: 700;
+    font-size: 40px;
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin-bottom: 30px;
+  }
+
+  p { font-size: 19px; color: var(--ink-soft); }
+
+  .pageno {
+    position: absolute;
+    right: 40px; bottom: 32px;
+    font-family: "Raleway", sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+  }
+  .footmark {
+    position: absolute;
+    left: 88px; bottom: 32px;
+    font-family: "Raleway", sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+  }
+  .footmark b { color: var(--red); }
+
+  /* ---------- Slide 1: title ---------- */
+  .title-slide { justify-content: center; }
+  .title-slide h1 { font-size: 88px; line-height: 0.98; }
+  .title-slide .lede {
+    font-size: 25px;
+    color: var(--ink);
+    font-weight: 500;
+    max-width: 760px;
+    margin-top: 26px;
+  }
+  .rule { width: 92px; height: 5px; background: var(--red); margin: 38px 0 34px; }
+  .team {
+    display: flex;
+    gap: 46px;
+    font-family: "Raleway", sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--ink);
+  }
+  .team span { display: block; font-family: "Open Sans"; font-weight: 400; font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .badge {
+    position: absolute;
+    top: 70px; right: 88px;
+    font-family: "Raleway", sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink);
+    border: 1.5px solid var(--ink);
+    padding: 9px 16px;
+  }
+
+  /* ---------- Content list ---------- */
+  .lead { font-size: 21px; color: var(--ink); max-width: 980px; margin-bottom: 34px; }
+  .lead b { color: var(--ink); font-weight: 600; }
+
+  ul.tasks { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 56px; margin-top: 6px; }
+  ul.tasks li {
+    font-size: 19px;
+    color: var(--ink-soft);
+    padding-left: 26px;
+    position: relative;
+  }
+  ul.tasks li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 11px;
+    width: 9px; height: 9px;
+    background: var(--red);
+  }
+  ul.tasks li b { color: var(--ink); font-weight: 600; display: block; font-family: "Raleway", sans-serif; }
+
+  /* ---------- Step columns (approach) ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px; margin-top: 10px; flex: 1; align-content: center; }
+  .step { border-top: 3px solid var(--ink); padding-top: 20px; }
+  .step .n {
+    font-family: "Raleway", sans-serif;
+    font-weight: 800;
+    font-size: 15px;
+    color: var(--red);
+    letter-spacing: 0.1em;
+  }
+  .step h3 {
+    font-family: "Raleway", sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    margin: 8px 0 12px;
+    color: var(--ink);
+  }
+  .step p { font-size: 16.5px; }
+
+  /* ---------- Metric tiles ---------- */
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin: 8px 0 36px; }
+  .metric { background: var(--wash); border-left: 4px solid var(--red); padding: 26px 28px; }
+  .metric .v { font-family: "Raleway", sans-serif; font-weight: 800; font-size: 52px; color: var(--ink); line-height: 1; }
+  .metric .l { font-size: 15px; color: var(--ink-soft); margin-top: 12px; }
+  .note { font-size: 18px; color: var(--ink-soft); max-width: 1000px; }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- OOD: chart ---------- */
+  .ood-wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 60px; flex: 1; align-items: center; }
+  .bars { display: flex; flex-direction: column; gap: 26px; }
+  .bargroup .blabel { font-family: "Raleway", sans-serif; font-weight: 600; font-size: 16px; margin-bottom: 10px; color: var(--ink); }
+  .track { display: flex; align-items: center; gap: 14px; margin-bottom: 9px; }
+  .track .tag { width: 44px; font-size: 13px; font-weight: 600; color: var(--muted); font-family: "Raleway"; letter-spacing: 0.08em; }
+  .bar { height: 26px; position: relative; }
+  .bar.id { background: var(--ink); }
+  .bar.ood { background: var(--red); }
+  .bar .pct { position: absolute; right: -52px; top: 2px; font-size: 14px; font-weight: 700; font-family: "Raleway"; color: var(--ink); }
+  .ood-text h2 { margin-bottom: 22px; }
+  .ood-text p { font-size: 19px; margin-bottom: 16px; }
+
+  /* ---------- Closing ---------- */
+  .next { display: flex; flex-direction: column; gap: 22px; margin-top: 8px; flex: 1; justify-content: center; }
+  .next .item { display: flex; gap: 22px; align-items: baseline; }
+  .next .item .idx { font-family: "Raleway"; font-weight: 800; font-size: 22px; color: var(--red); min-width: 34px; }
+  .next .item .txt { font-size: 20px; color: var(--ink); }
+  .next .item .txt span { color: var(--ink-soft); font-size: 17px; display: block; margin-top: 2px; }
+
+  /* ---------- Print to PDF ---------- */
+  @page { size: 1280px 720px; margin: 0; }
+  @media print {
+    body { background: #fff; }
+    .deck { display: block; padding: 0; gap: 0; }
+    .slide { box-shadow: none; page-break-after: always; break-after: page; width: 1280px; height: 720px; }
+    .slide:last-child { page-break-after: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- Slide 1 -->
+  <section class="slide title-slide">
+    <div class="badge">Industrial AI · Infineon</div>
+    <div class="kicker">Zero One Hack_01</div>
+    <h1>genwro</h1>
+    <div class="rule"></div>
+    <p class="lede">Learning the hidden process grammar behind semiconductor fabrication sequences.</p>
+    <div class="team" style="margin-top:46px;">
+      <div>Marcin Kostrzewa<span>AI Engineer</span></div>
+      <div>Michal Furgala<span>AI Engineer</span></div>
+      <div>Lukasz Lenkiewicz<span>AI Engineer</span></div>
+    </div>
+    <div class="footmark"><b>genwro</b></div>
+    <div class="pageno">01</div>
+  </section>
+
+  <!-- Slide 2 -->
+  <section class="slide">
+    <div class="kicker">The problem</div>
+    <h2>Fabrication flows follow a hidden grammar</h2>
+    <p class="lead">We model MOSFET, IGBT, and IC flows: about <b>198 process steps</b>, <b>115 to 150 steps</b> per sequence, a shared backbone plus family-specific steps. The model has to learn what comes next, what is missing, and what breaks the rules.</p>
+    <ul class="tasks">
+      <li><b>Next step</b>Rank the step that should come next.</li>
+      <li><b>Completion</b>Finish a flow from a partial prefix.</li>
+      <li><b>Anomaly</b>Flag sequences that violate process rules.</li>
+      <li><b>Out of distribution</b>Train on two families, test on a third unseen one.</li>
+    </ul>
+    <div class="footmark"><b>genwro</b></div>
+    <div class="pageno">02</div>
+  </section>
+
+  <!-- Slide 3 -->
+  <section class="slide">
+    <div class="kicker">Approach</div>
+    <h2>Generate valid data, then train one decoder</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="n">01</div>
+        <h3>Grammar generator</h3>
+        <p>A synthetic generator builds rule-valid flows at scale, 100k per family, with the organizer's rule checker as a backstop.</p>
+      </div>
+      <div class="step">
+        <div class="n">02</div>
+        <h3>GPT-ALiBi decoder</h3>
+        <p>One small decoder with ALiBi attention covers all three tasks: ranking, completion, and likelihood-based anomaly scoring.</p>
+      </div>
+      <div class="step">
+        <div class="n">03</div>
+        <h3>Leak-free OOD set</h3>
+        <p>A novel-family generator builds flows from atomic operations, so the held-out test never reuses real family structure.</p>
+      </div>
+    </div>
+    <div class="footmark"><b>genwro</b></div>
+    <div class="pageno">03</div>
+  </section>
+
+  <!-- Slide 4 -->
+  <section class="slide">
+    <div class="kicker">Results · in distribution</div>
+    <h2>It matches the baseline and flags violations cleanly</h2>
+    <div class="metrics">
+      <div class="metric">
+        <div class="v">0.69</div>
+        <div class="l">Next-step top-1 accuracy<br>(0.99 at top-3)</div>
+      </div>
+      <div class="metric">
+        <div class="v">~1.0</div>
+        <div class="l">Anomaly ROC-AUC<br>on in-distribution flows</div>
+      </div>
+      <div class="metric">
+        <div class="v">100%</div>
+        <div class="l">Generated completions<br>pass the rule validator</div>
+      </div>
+    </div>
+    <p class="note">In distribution the decoder roughly ties a tuned n-gram on ranking and detects rule violations almost perfectly. The interesting part is what happens when the test family was never seen during training.</p>
+    <div class="footmark"><b>genwro</b></div>
+    <div class="pageno">04</div>
+  </section>
+
+  <!-- Slide 5 -->
+  <section class="slide">
+    <div class="kicker">The honest gap · out of distribution</div>
+    <div class="ood-wrap">
+      <div class="bars">
+        <div class="bargroup">
+          <div class="blabel">Next-step top-1 holds up</div>
+          <div class="track"><span class="tag">ID</span><div class="bar id" style="width:69%"><span class="pct">0.69</span></div></div>
+          <div class="track"><span class="tag">OOD</span><div class="bar ood" style="width:66%"><span class="pct">0.66</span></div></div>
+        </div>
+        <div class="bargroup">
+          <div class="blabel">Anomaly ROC-AUC falls off</div>
+          <div class="track"><span class="tag">ID</span><div class="bar id" style="width:99%"><span class="pct">~1.0</span></div></div>
+          <div class="track"><span class="tag">OOD</span><div class="bar ood" style="width:77%"><span class="pct">0.77</span></div></div>
+        </div>
+      </div>
+      <div class="ood-text">
+        <h2>What breaks on an unseen family</h2>
+        <p>Local step transitions look similar across families, so next-step prediction barely moves.</p>
+        <p>Anomaly detection is the part that breaks. The threshold tuned in distribution does not transfer, so it flags almost everything and ROC-AUC drops to about 0.77.</p>
+      </div>
+    </div>
+    <div class="footmark"><b>genwro</b></div>
+    <div class="pageno">05</div>
+  </section>
+
+  <!-- Slide 6 -->
+  <section class="slide">
+    <div class="kicker">What we would do next</div>
+    <h2>Closing the OOD gap</h2>
+    <div class="next">
+      <div class="item">
+        <div class="idx">01</div>
+        <div class="txt">Recalibrate the anomaly threshold<span>Per-family, or from a small sample of the unseen family.</span></div>
+      </div>
+      <div class="item">
+        <div class="idx">02</div>
+        <div class="txt">Train against the rule validator as a verifiable reward<span>DPO sharpened in-distribution scoring offline; GRPO already trains stably.</span></div>
+      </div>
+      <div class="item">
+        <div class="idx">03</div>
+        <div class="txt">Ensemble the decoder with the n-gram for anomaly scoring<span>The n-gram likelihood is just as strong an out-of-distribution detector.</span></div>
+      </div>
+    </div>
+    <div class="footmark"><b>genwro</b> · thank you</div>
+    <div class="pageno">06</div>
+  </section>
+
+</div>
+</body>
+</html>
