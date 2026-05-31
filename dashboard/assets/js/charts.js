@@ -27,8 +27,11 @@ window.ZHCharts = (function () {
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
     return (h >>> 0) / 4294967296;
   }
-  const color = (kind) => (kind === "baseline" ? "var(--baseline)" : "var(--accent)");
+  const RED = "#e41717", RED_WARM = "#e35052", ID = "#d7dde2", MUTED = "#807d76", OK = "#4ea36a";
+  const kindColor = (kind) =>
+    kind === "chosen" ? RED : kind === "neural" ? ID : MUTED;
 
+  /* ---- tooltip ---- */
   let tip;
   function tooltip() { if (!tip) { tip = h("div", { class: "zh-tip" }); document.body.appendChild(tip); } return tip; }
   function showTip(html, ev) { const t = tooltip(); t.innerHTML = html; t.style.opacity = "1"; moveTip(ev); }
@@ -47,6 +50,7 @@ window.ZHCharts = (function () {
     node.addEventListener("mouseleave", hideTip);
   }
 
+  /* ---- single-metric horizontal bar chart ---- */
   function barChart(container, rows, opts) {
     opts = opts || {};
     const fmtv = opts.format || pct;
@@ -68,10 +72,9 @@ window.ZHCharts = (function () {
       svg.appendChild(s("line", { x1: x(opts.reference), x2: x(opts.reference), y1: padT - 2, y2: H - padB + 2, class: "zh-ref" }));
       svg.appendChild(s("text", { x: x(opts.reference), y: padT - 1, class: "zh-ref-label", "text-anchor": "middle" }, opts.referenceLabel || "ref"));
     }
-
     rows.forEach((r, i) => {
       const y0 = padT + i * rowH, barH = Math.min(22, rowH - 16), by = y0 + (rowH - barH) / 2;
-      const c = color(r.kind);
+      const c = r.color || kindColor(r.kind);
       const g = s("g", { class: "zh-bar" });
       g.appendChild(s("text", { x: mLeft - 12, y: by + barH / 2 + 4, class: "zh-rowlabel", "text-anchor": "end" }, r.label));
       g.appendChild(s("rect", { x: mLeft, y: by, width: innerW, height: barH, rx: 2, class: "zh-track" }));
@@ -90,13 +93,136 @@ window.ZHCharts = (function () {
     container.appendChild(svg);
   }
 
+  /* ---- grouped bar: each row carries several named values (e.g. ID/OOD) ---- */
+  function groupedBar(container, rows, opts) {
+    opts = opts || {};
+    const series = opts.series; // [{key,label,color}]
+    const domain = opts.domain || [0, 1];
+    const W = container.clientWidth || 560;
+    const mLeft = opts.labelWidth || 150, mRight = 52;
+    const groupGap = 22, barH = 13, barGap = 4, padT = 8, padB = 26;
+    const groupH = series.length * barH + (series.length - 1) * barGap;
+    const rowH = groupH + groupGap;
+    const H = padT + padB + rows.length * rowH;
+    const innerW = Math.max(40, W - mLeft - mRight);
+    const x = (v) => mLeft + ((v - domain[0]) / (domain[1] - domain[0])) * innerW;
+    const fmtv = opts.format || pct;
+    const svg = s("svg", { class: "zh-svg", viewBox: `0 0 ${W} ${H}`, width: "100%", height: H });
+
+    (opts.ticks || [domain[0], (domain[0] + domain[1]) / 2, domain[1]]).forEach((tv) => {
+      svg.appendChild(s("line", { x1: x(tv), x2: x(tv), y1: padT, y2: H - padB, class: "zh-grid" }));
+      svg.appendChild(s("text", { x: x(tv), y: H - 8, class: "zh-axis", "text-anchor": "middle" }, fmtv(tv)));
+    });
+
+    rows.forEach((r, i) => {
+      const gy = padT + i * rowH;
+      const g = s("g");
+      g.appendChild(s("text", { x: mLeft - 12, y: gy + groupH / 2 + 4, class: "zh-rowlabel" + (r.chosen ? "" : ""), "text-anchor": "end",
+        fill: r.chosen ? RED_WARM : "var(--ink-soft)" }, (r.chosen ? "▸ " : "") + r.label));
+      series.forEach((se, j) => {
+        const by = gy + j * (barH + barGap);
+        g.appendChild(s("rect", { x: mLeft, y: by, width: innerW, height: barH, rx: 2, class: "zh-track" }));
+        const v = r[se.key];
+        const bw = v == null ? 0 : Math.max(0, x(v) - mLeft);
+        const rect = s("rect", { x: mLeft, y: by, width: bw, height: barH, rx: 2, fill: se.color, class: "zh-fill" + (r.chosen && se.highlight ? " best" : "") });
+        rect.style.opacity = r.chosen ? 1 : (se.dim ? .55 : .82);
+        rect.style.transform = "scaleX(0)"; rect.style.transitionDelay = (i * 60 + j * 40) + "ms";
+        g.appendChild(rect);
+        requestAnimationFrame(() => requestAnimationFrame(() => { rect.style.transform = "scaleX(1)"; }));
+        g.appendChild(s("text", { x: x(v) + 7, y: by + barH - 2, class: "zh-val", "font-size": "10.5", "text-anchor": "start" }, fmtv(v)));
+        const cell = s("rect", { x: mLeft, y: by, width: innerW, height: barH, fill: "transparent" });
+        bindTip(cell, `<b>${r.label}</b> · ${se.label}<br>${fmtv(v)}` + (r.sub ? `<br><span class="muted">${r.sub}</span>` : ""));
+        g.appendChild(cell);
+      });
+      svg.appendChild(g);
+    });
+    container.appendChild(svg);
+  }
+
+  /* ---- ID -> OOD gap track: light marker (ID) connected to red marker (OOD) ---- */
+  function gapBar(container, d, opts) {
+    opts = opts || {};
+    const domain = opts.domain || [0, 1];
+    const W = container.clientWidth || 480, H = 46;
+    const mLeft = 4, mRight = 4, cy = 22;
+    const innerW = W - mLeft - mRight;
+    const x = (v) => mLeft + ((v - domain[0]) / (domain[1] - domain[0])) * innerW;
+    const svg = s("svg", { class: "zh-svg", viewBox: `0 0 ${W} ${H}`, width: "100%", height: H });
+    // baseline track
+    svg.appendChild(s("line", { x1: mLeft, x2: W - mRight, y1: cy, y2: cy, stroke: "rgba(255,255,255,.06)", "stroke-width": 6, "stroke-linecap": "round" }));
+    const xi = x(d.id), xo = x(d.ood);
+    // drop connector
+    if (!d.flat) {
+      const lo = Math.min(xi, xo), hi = Math.max(xi, xo);
+      const drop = s("line", { x1: lo, x2: lo, y1: cy, y2: cy, stroke: RED, "stroke-width": 6, "stroke-linecap": "round", opacity: .55 });
+      svg.appendChild(drop);
+      requestAnimationFrame(() => requestAnimationFrame(() => { drop.setAttribute("x2", hi); drop.style.transition = "all .7s var(--ease)"; }));
+    }
+    // ID marker (light)
+    const gi = s("g");
+    gi.appendChild(s("circle", { cx: xi, cy, r: 7, fill: ID, stroke: "var(--bg)", "stroke-width": 2 }));
+    gi.appendChild(s("text", { x: xi, y: cy - 13, class: "zh-val", "text-anchor": "middle", "font-size": "11", fill: ID }, pct(d.id)));
+    gi.appendChild(s("text", { x: xi, y: cy + 19, class: "zh-axis", "text-anchor": "middle", "font-size": "8.5" }, "ID"));
+    bindTip(gi, `<b>in-distribution</b><br>${pct(d.id)}`);
+    // OOD marker (red)
+    const go = s("g");
+    go.appendChild(s("circle", { cx: xo, cy, r: 7, fill: d.flat ? ID : RED, stroke: "var(--bg)", "stroke-width": 2, filter: d.flat ? null : "drop-shadow(0 0 5px rgba(228,23,23,.7))" }));
+    go.appendChild(s("text", { x: xo, y: cy - 13, class: "zh-val", "text-anchor": "middle", "font-size": "11", fill: d.flat ? ID : RED_WARM }, pct(d.ood)));
+    go.appendChild(s("text", { x: xo, y: cy + 19, class: "zh-axis", "text-anchor": "middle", "font-size": "8.5" }, "OOD"));
+    bindTip(go, `<b>out-of-distribution</b><br>${pct(d.ood)}` + (d.flat ? "" : `<br><span class="muted">drop ${((d.id - d.ood) * 100).toFixed(1)} pts</span>`));
+    svg.appendChild(gi); svg.appendChild(go);
+    container.appendChild(svg);
+  }
+
+  /* ---- line chart (learning curves) ---- */
+  function lineChart(container, series, opts) {
+    opts = opts || {};
+    const domain = opts.domain || [0, 1], xdom = opts.xdomain || [1, 10];
+    const W = container.clientWidth || 520, H = opts.height || 230;
+    const mL = 44, mR = 14, mT = 12, mB = 30;
+    const iw = W - mL - mR, ih = H - mT - mB;
+    const X = (v) => mL + ((v - xdom[0]) / (xdom[1] - xdom[0])) * iw;
+    const Y = (v) => mT + ih - ((v - domain[0]) / (domain[1] - domain[0])) * ih;
+    const fmtv = opts.format || ((x) => x.toFixed(2));
+    const svg = s("svg", { class: "zh-svg", viewBox: `0 0 ${W} ${H}`, width: "100%", height: H });
+    (opts.yticks || [domain[0], (domain[0] + domain[1]) / 2, domain[1]]).forEach((tv) => {
+      svg.appendChild(s("line", { x1: mL, x2: W - mR, y1: Y(tv), y2: Y(tv), class: "zh-grid" }));
+      svg.appendChild(s("text", { x: mL - 8, y: Y(tv) + 3.5, class: "zh-axis", "text-anchor": "end" }, fmtv(tv)));
+    });
+    (opts.xticks || [xdom[0], (xdom[0] + xdom[1]) / 2, xdom[1]]).forEach((tv) => {
+      svg.appendChild(s("text", { x: X(tv), y: H - 9, class: "zh-axis", "text-anchor": "middle" }, String(tv)));
+    });
+    if (opts.xlabel) svg.appendChild(s("text", { x: mL + iw / 2, y: H - 9, class: "zh-axis", "text-anchor": "middle", opacity: 0 }, opts.xlabel));
+    series.forEach((se, si) => {
+      const pts = se.points.filter((p) => p.y != null);
+      if (!pts.length) return;
+      const dPath = pts.map((p, i) => (i ? "L" : "M") + X(p.x) + " " + Y(p.y)).join(" ");
+      if (se.area) {
+        const area = `M${X(pts[0].x)} ${Y(domain[0])} ` + pts.map((p) => "L" + X(p.x) + " " + Y(p.y)).join(" ") + ` L${X(pts[pts.length - 1].x)} ${Y(domain[0])} Z`;
+        svg.appendChild(s("path", { d: area, fill: se.color, class: "zh-area" }));
+      }
+      const path = s("path", { d: dPath, class: "zh-line", stroke: se.color, "stroke-dasharray": se.dash || null });
+      const len = (pts.length) * 60;
+      path.style.strokeDasharray = se.dash ? se.dash : len; path.style.strokeDashoffset = se.dash ? 0 : len;
+      if (!se.dash) { path.style.transition = "stroke-dashoffset 1.1s var(--ease)"; requestAnimationFrame(() => requestAnimationFrame(() => { path.style.strokeDashoffset = 0; })); }
+      svg.appendChild(path);
+      pts.forEach((p) => {
+        const dot = s("circle", { cx: X(p.x), cy: Y(p.y), r: 3, fill: se.color, class: "zh-dot" });
+        bindTip(dot, `<b>${se.label}</b><br>epoch ${p.x}: <b>${fmtv(p.y)}</b>`);
+        svg.appendChild(dot);
+      });
+    });
+    container.appendChild(svg);
+  }
+
+  /* ---- wafer map ---- */
   function waferMap(container, opts) {
     opts = opts || {};
     const ring = opts.ring || 12, gap = opts.gap || 3, size = opts.size || 300;
     const die = (size - (ring + 1) * gap) / ring;
     const cx = size / 2, cy = size / 2, R = size / 2 - 2;
     const svg = s("svg", { class: "zh-svg zh-wafer", viewBox: `0 0 ${size} ${size + 8}`, width: "100%", height: size + 8 });
-    svg.appendChild(s("circle", { cx: cx, cy: cy, r: R, fill: "var(--wafer-bg)", stroke: "var(--rule)", "stroke-width": 1 }));
+    svg.appendChild(s("circle", { cx, cy, r: R, fill: "rgba(255,255,255,.022)", stroke: "var(--line)", "stroke-width": 1 }));
     let total = 0, flagged = 0;
     for (let r = 0; r < ring; r++) for (let c = 0; c < ring; c++) {
       const x = gap + c * (die + gap), y = gap + r * (die + gap);
@@ -106,22 +232,24 @@ window.ZHCharts = (function () {
       const bad = hash(`${opts.seed || "w"}:${r}:${c}`) < (opts.rate || 0.1);
       if (bad) flagged++;
       const g = s("g");
-      g.appendChild(s("rect", { x: x, y: y, width: die, height: die, rx: 1.5,
-        fill: bad ? "rgba(var(--oxide-rgb),.92)" : "rgba(100,116,139,.16)",
-        stroke: bad ? "var(--oxide)" : "rgba(100,116,139,.4)", "stroke-width": bad ? 1 : 0.6,
+      g.appendChild(s("rect", { x, y, width: die, height: die, rx: 1.5,
+        fill: bad ? "rgba(228,23,23,.92)" : "rgba(215,221,226,.10)",
+        stroke: bad ? RED : "rgba(215,221,226,.22)", "stroke-width": bad ? 1 : 0.6,
         class: "zh-die" + (bad ? " bad" : "") }));
-      bindTip(g, bad ? `<b>die ${r}·${c}</b><br>flagged: rule violation` : `die ${r}·${c}<br>valid`);
+      if (bad) g.querySelector("rect").style.filter = "drop-shadow(0 0 3px rgba(228,23,23,.6))";
+      bindTip(g, bad ? `<b>die ${r}·${c}</b><br>flagged · rule violation` : `die ${r}·${c}<br>valid`);
       svg.appendChild(g);
     }
-    svg.appendChild(s("line", { x1: cx - 16, y1: size + 2, x2: cx + 16, y2: size + 2, stroke: "var(--ink)", "stroke-width": 2 }));
+    svg.appendChild(s("line", { x1: cx - 16, y1: size + 2, x2: cx + 16, y2: size + 2, stroke: "var(--muted)", "stroke-width": 2 }));
     container.appendChild(svg);
     return { total, flagged };
   }
 
+  /* ---- process flow ribbon ---- */
   const FLOW_COLORS = {
-    clean: "#475569", thermal: "#c2410c", litho: "#0b5cad", etch: "#6d28d9",
-    doping: "#a16207", deposition: "#0f766e", planarize: "#334155", via: "#0e7490",
-    metal: "#1e5a8a", passivation: "#4d7c0f", test: "#15803d", logistics: "#86198f", other: "#475569",
+    clean: "#7a8893", thermal: "#d98a3a", litho: "#5b9bd5", etch: "#9b7bd4",
+    doping: "#c9a23a", deposition: "#3f9b8e", planarize: "#8a93a0", via: "#4aa3b8",
+    metal: "#6f9bc4", passivation: "#7fae4a", test: "#4ea36a", logistics: "#c46aa8", other: "#7a8893",
   };
   function classifyStep(label) {
     const s = (label || "").toUpperCase();
@@ -157,5 +285,6 @@ window.ZHCharts = (function () {
     container.appendChild(wrap);
   }
 
-  return { barChart, waferMap, processFlow, classifyStep, h, s, fmt, pct, color };
+  return { barChart, groupedBar, gapBar, lineChart, waferMap, processFlow, classifyStep, h, s, fmt, pct, kindColor,
+    colors: { RED, RED_WARM, ID, MUTED, OK } };
 })();
