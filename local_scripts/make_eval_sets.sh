@@ -16,7 +16,7 @@ set -euo pipefail
 # samples from the train families for anomaly-threshold tuning.
 
 EVAL_ROOT="${EVAL_ROOT:-data/eval}"
-DATASETS="${DATASETS:-valid_s005k valid_s010k valid_s020k valid_s100k}"
+DATASETS="${DATASETS:-valid_s005k valid_s020k valid_s100k}"
 HOLDOUT_FAMILIES="${HOLDOUT_FAMILIES:-mosfet igbt ic}"
 EVAL_SEED="${EVAL_SEED:-1729}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -35,7 +35,7 @@ Options:
 
 Environment variables with the same names are also supported:
   EVAL_ROOT=data/eval
-  DATASETS="valid_s005k valid_s010k"
+  DATASETS="valid_s005k valid_s020k valid_s100k"
   HOLDOUT_FAMILIES="mosfet igbt ic"
   EVAL_SEED=1729
   DRY_RUN=1

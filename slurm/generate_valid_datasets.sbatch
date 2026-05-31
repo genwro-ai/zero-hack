@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=zero-hack-data
-#SBATCH --array=0-17%6
+#SBATCH --array=0-8%6
 #SBATCH --account=euhpc_d30_031
 #SBATCH --partition=boost_usr_prod
 #SBATCH --reservation=s_tra_ncc # Reservation for the hackathon
@@ -19,7 +19,7 @@ set -euo pipefail
 #
 # It creates the same layout as local_scripts/generate_valid_datasets.sh:
 #   data/generated/valid_s005k/raw/MOSFET.csv
-#   data/generated/valid_s010k/raw/MOSFET.csv
+#   data/generated/valid_s020k/raw/MOSFET.csv
 #   ...
 #
 # Submit with:
@@ -46,7 +46,7 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 source slurm/setup_uv.sh
 
-SIZES=(5000 10000 20000 100000 500000 1000000)
+SIZES=(5000 20000 100000)
 FAMILIES=(mosfet igbt ic)
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
