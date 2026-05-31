@@ -1,29 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Zero-Hack · Industrial Process-Logic Benchmark</title>
-  <meta name="description" content="Sequence models on semiconductor fabrication process logic: next-step prediction, completion, and rule-violation anomaly detection across MOSFET / IGBT / IC families, with a leave-one-family-out generalization test." />
+  <title>genwro · Industrial AI</title>
+  <meta name="description"
+    content="Sequence models on semiconductor process flows — next-step, completion, anomaly. IC / MOSFET / IGBT." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@500;600;700;800&family=Open+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Raleway:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
+
 <body>
 
   <header class="topbar">
     <span class="brand">gen<span class="wro">wro</span></span>
-    <span class="doc">ZERO-HACK · ZH-01</span>
-    <span class="status"><span class="led"></span>Industrial AI</span>
     <nav>
       <a href="#overview">Overview</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#gap">The gap</a>
-      <a href="#nextstep">Next-step</a>
+      <a href="#next-step">Next-step</a>
       <a href="#completion">Completion</a>
-      <a href="#anomaly">Anomaly · DPO</a>
-      <a href="#curves">Curves</a>
+      <a href="#anomaly">Anomaly</a>
       <a href="#examples">Examples</a>
     </nav>
   </header>
@@ -32,213 +32,93 @@
 
     <header class="masthead" id="overview">
       <div class="mast-main">
-        <div class="eyebrow">Zero One Hack_01 · Industrial AI · Infineon</div>
-        <h1 style="margin-top:16px">Does the model <em>learn</em> the process, or memorize it?</h1>
-        <p class="lede">A small GPT decoder against classical baselines on real fab process flows.
-          In distribution it flags rule violations almost perfectly. Move to an unseen device
-          family and that signal collapses. That gap is what this benchmark measures.</p>
-        <div class="spec">
-          <span>FAMILIES&nbsp; <b>MOSFET · IGBT · IC</b></span>
-          <span>VOCAB&nbsp; <b id="spec-vocab">≈198</b></span>
-          <span>DECODER&nbsp; <b id="spec-params">3.3M</b></span>
-          <span>SPLIT&nbsp; <b class="r">leave-one-family-out</b></span>
-        </div>
-        <div class="badge-note"><span class="dot"></span> figures transcribed from <code style="all:unset;font-family:inherit;color:var(--ink)">REPORT.md</code> · local holdout eval · official scorer pending</div>
-      </div>
-      <div class="mast-side">
-        <div id="hero-wafer"></div>
-        <div class="cap">wafer map · <b>red</b> = die flagged as a rule violation</div>
+        <div class="eyebrow">Industrial AI · Infineon</div>
+        <h1 style="margin-top:16px">Sequence models on semiconductor process flows</h1>
+        <p class="lede">Classical and neural models across three device families.</p>
       </div>
     </header>
 
-    <div class="ribbon">
-      <div class="rib-label">Canonical process flow · functional blocks · ~115-150 steps / sequence</div>
-      <div id="hero-flow"></div>
-    </div>
-
     <div class="kpis" id="kpis"></div>
 
-    <!-- 01 · ARCHITECTURE SWEEP -->
-    <section id="architecture" class="reveal">
-      <div class="sec-head"><span class="sec-num">01</span><h2>Picking the decoder</h2></div>
-      <p class="sec-lead">Five positional-encoding variants, scored on the leave-one-family-out split.
-        In distribution they tie: completion sits near 0.96 and anomaly AUC is near perfect for all of them.
-        The decision came from <em>out-of-distribution</em>. <b>GPT-ALiBi</b> takes the best OOD completion (0.806)
-        while keeping anomaly separation reasonable, so it is the chosen decoder for the rest of the report.</p>
-      <div class="grid c2u">
+    <section id="next-step" class="reveal">
+      <div class="sec-head"><span class="sec-num">01</span>
+        <h2>Next-step prediction</h2>
+      </div>
+      <div class="grid c2">
         <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.1A</span><h3>Out-of-distribution · the deciding metrics</h3></div><span class="p-note">held-out family</span></div>
-          <div id="arch-bar"></div>
-          <div class="legend">
-            <span><i class="sw-id"></i> OOD completion</span>
-            <span><i class="sw-red"></i> OOD anomaly ROC-AUC</span>
-            <span>▸ = chosen</span>
+          <div class="p-head">
+            <div class="ht">
+              <h3>Top-1 accuracy</h3>
+            </div><span class="p-note" id="ns-note"></span>
           </div>
-        </div>
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.1B</span><h3>Full sweep · ID vs OOD</h3></div><span class="p-note">5 variants</span></div>
-          <div id="arch-table"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 02 · THE GENERALIZATION GAP -->
-    <section id="gap" class="reveal">
-      <div class="sec-head"><span class="sec-num">02</span><h2>The generalization gap</h2></div>
-      <p class="sec-lead">Same GPT-ALiBi decoder, two views: the two trained families (<b>ID</b>) and the held-out third (<b>OOD</b>).
-        Next-step prediction barely moves, because local transitions look alike across families. <em>Anomaly detection is what breaks.</em>
-        The ID-tuned threshold flags almost everything on a new family, so F1 falls toward the all-positive baseline and even
-        threshold-free ROC-AUC drops from near perfect to ~0.77.</p>
-      <div class="grid c2u">
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.2A</span><h3>ID → OOD · per metric</h3></div><span class="p-note">● light = ID · ● red = OOD</span></div>
-          <div class="gap-grid" id="gap-rows"></div>
-        </div>
-        <div class="callout" style="align-self:start">
-          <h4>Why it breaks</h4>
-          <p>A likelihood threshold calibrated on known families assumes the model assigns
-            similar scores to a valid sequence everywhere. On an <b>unseen family</b> the whole distribution shifts,
-            so the threshold mislabels valid flows as anomalies. <em>GPT-ALiBi and the 5-gram land in the same place
-            on OOD anomaly</em> (AUC 0.765 vs 0.769), so the neural model buys no advantage there. Fixing the threshold
-            transfer is the open problem.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- 03 · NEXT-STEP -->
-    <section id="nextstep" class="reveal">
-      <div class="sec-head"><span class="sec-num">03</span><h2>Next-step prediction</h2></div>
-      <p class="sec-lead">Apples-to-apples on the holdout split: the tuned 5-gram, the LSTM, and GPT-ALiBi finish within
-        a few tenths of a point. Ranking the next process step is the task where a classical model already does most of the work.</p>
-      <div class="grid c2u">
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.3A</span><h3>Top-1 accuracy · in-distribution</h3></div><span class="p-note" id="ns-note"></span></div>
           <div id="ns-bar"></div>
           <div class="legend">
-            <span><i class="sw-classic"></i> classical</span>
-            <span><i class="sw-id"></i> LSTM</span>
-            <span><i class="sw-red"></i> GPT-ALiBi</span>
+            <span><i class="swatch-baseline"></i> baseline</span>
+            <span><i class="swatch-accent"></i> neural</span>
           </div>
         </div>
         <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.3B</span><h3>Full table · ID &amp; OOD</h3></div><span class="p-note">— = not measured</span></div>
+          <div class="p-head">
+            <div class="ht">
+              <h3>Metrics</h3>
+            </div><span class="p-note">— not measured</span>
+          </div>
           <div id="ns-table"></div>
         </div>
       </div>
     </section>
 
-    <!-- 04 · COMPLETION -->
     <section id="completion" class="reveal">
-      <div class="sec-head"><span class="sec-num">04</span><h2>Completion: the open problem</h2></div>
-      <p class="sec-lead">Every model emits <em>process-valid</em> flows: the validator passes 100% of decoded continuations.
-        Yet exact match stays near zero, because the sequences are long and many continuations are equally legal.
-        The remaining problem is matching the one held-out reference, not satisfying the rules.</p>
+      <div class="sec-head"><span class="sec-num">02</span>
+        <h2>Sequence completion</h2>
+      </div>
       <div class="grid c2">
         <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.4A</span><h3>Process-validity vs exact-match</h3></div><span class="p-note">two ends of the same task</span></div>
-          <div class="stat-row" id="cp-stats"></div>
-          <p class="p-note" style="margin-top:14px;line-height:1.6">Valid but not identical: a reordering the
-            rules allow still scores 0 on exact match. See the worked example in §08.</p>
+          <div class="p-head">
+            <div class="ht">
+              <h3>Edit distance</h3>
+            </div><span class="p-note" id="cp-note"></span>
+          </div>
+          <div id="cp-bar"></div>
+          <div class="legend"><span class="muted">lower is better</span></div>
         </div>
         <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.4B</span><h3>LSTM completion · teacher forcing vs scheduled sampling</h3></div><span class="p-note">↓ lower better</span></div>
+          <div class="p-head">
+            <div class="ht">
+              <h3>Metrics</h3>
+            </div><span class="p-note">↓ lower better</span>
+          </div>
           <div id="cp-table"></div>
         </div>
       </div>
     </section>
 
-    <!-- 05 · ANOMALY + DPO -->
     <section id="anomaly" class="reveal">
-      <div class="sec-head"><span class="sec-num">05</span><h2>Anomaly detection &amp; DPO</h2></div>
-      <p class="sec-lead">Plain sequence likelihood is a near-perfect in-distribution detector. Preference optimization (DPO)
-        on validity-labeled pairs <em>sharpens</em> that ID discrimination further, lifting ROC-AUC from 0.981 to 0.999.
-        It does not fix the OOD threshold transfer.</p>
-      <div class="grid c2u">
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.5A</span><h3>DPO · ID anomaly sharpening</h3></div><span class="p-note">SFT → +DPO</span></div>
-          <div id="dpo-bar"></div>
-          <div class="legend">
-            <span><i class="sw-classic"></i> SFT (phase-augmented)</span>
-            <span><i class="sw-red"></i> + DPO</span>
-          </div>
+      <div class="sec-head"><span class="sec-num">03</span>
+        <h2>Anomaly detection</h2>
+      </div>
+      <div class="panel">
+        <div class="p-head">
+          <div class="ht">
+            <h3>Likelihood detector</h3>
+          </div><span class="p-note">local eval</span>
         </div>
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.5B</span><h3>DPO · full matrix</h3></div><span class="p-note">mean over 3 holdouts</span></div>
-          <div id="dpo-table"></div>
-        </div>
+        <div class="stat-row" id="an-stats"></div>
       </div>
     </section>
 
-    <!-- 06 · LEARNING CURVES -->
-    <section id="curves" class="reveal">
-      <div class="sec-head"><span class="sec-num">06</span><h2>LSTM learning curves</h2></div>
-      <p class="sec-lead">Teacher forcing converges fast: train loss drops to ~0.34 over ten epochs while validation top-1
-        settles around <em>0.82</em>. Scheduled sampling tracks within a point on next-step, but that small edge did not carry
-        over to free-running completion, which is the metric that mattered.</p>
-      <div class="grid c2">
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.6A</span><h3>Validation Top-1 · TF vs scheduled sampling</h3></div><span class="p-note">10 epochs · mean over holdouts</span></div>
-          <div id="curve-top1"></div>
-          <div class="legend">
-            <span><i class="sw-red"></i> teacher forcing</span>
-            <span><i class="sw-id"></i> scheduled sampling</span>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="p-head"><div class="ht"><span class="fig">FIG.6B</span><h3>Teacher forcing · loss</h3></div><span class="p-note">train vs validation</span></div>
-          <div id="curve-loss"></div>
-          <div class="legend">
-            <span><i class="sw-red"></i> train loss</span>
-            <span><i class="sw-id"></i> validation loss</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 07 · NEUROSYMBOLIC NOTE -->
-    <section class="reveal" style="padding-top:24px">
-      <div class="callout">
-        <h4>Footnote · neurosymbolic decoding</h4>
-        <p>Re-ranking the next-step distribution with the process rules at decode time changed <em>at most 6 of 2000</em>
-          predictions on any held-out family, and hard masking never moved the top-1 token. The augmented decoder already
-          keeps its high-probability candidates rule compliant, so the symbolic layer has nothing to correct at this stage.</p>
-      </div>
-    </section>
-
-    <!-- 08 · EXAMPLES -->
     <section id="examples" class="reveal">
-      <div class="sec-head"><span class="sec-num">08</span><h2>Worked examples</h2></div>
-      <p class="sec-lead">Same input, classical baseline vs trained decoder, plus a flagged anomaly with its attributed rule.</p>
-      <h3 style="margin:6px 0 12px;font-size:15px;font-weight:600;color:var(--ink-soft)">Next-step · ranked candidates</h3>
+      <div class="sec-head"><span class="sec-num">04</span>
+        <h2>Baseline vs. neural</h2>
+      </div>
       <div id="ex-nextstep"></div>
-      <h3 style="margin:24px 0 12px;font-size:15px;font-weight:600;color:var(--ink-soft)">Completion · valid but reordered</h3>
-      <div id="ex-completion"></div>
-      <h3 style="margin:24px 0 12px;font-size:15px;font-weight:600;color:var(--ink-soft)">Anomaly &amp; rule attribution</h3>
+      <h3 style="margin:24px 0 12px; font-size:17px; font-weight:700">Anomaly</h3>
       <div id="ex-anomaly"></div>
     </section>
 
     <footer>
-      <div class="cols">
-        <div>
-          <h4>genwro · Industrial AI · Infineon</h4>
-          <p>Static benchmark dashboard: no backend, one embedded data file, deploys to GitHub Pages.
-            Every figure is transcribed from <code>REPORT.md</code> and traceable to its source table.</p>
-          <div class="team" id="team" style="margin-top:14px"></div>
-        </div>
-        <div>
-          <h4>Reproduce</h4>
-          <div class="repro mono">
-            <code>uv sync</code><br/>
-            <code>sbatch slurm/run_holdout_gpt_alibi.sbatch</code><br/>
-            <code>sbatch slurm/train_gpt_dpo.sbatch</code>
-          </div>
-        </div>
-        <div>
-          <h4>Honest by construction</h4>
-          <p style="font-size:13.5px">ID numbers are strong; the OOD gap is real and unsolved.
-            This page reports both. See <code>REPORT.md</code> §3 for the full method.</p>
-        </div>
-      </div>
+      <h4>genwro</h4>
+      <p style="font-size:14px; color:var(--ink-soft)">Industrial AI · Infineon</p>
     </footer>
 
   </div>
@@ -247,4 +127,5 @@
   <script src="assets/js/charts.js"></script>
   <script src="assets/js/render.js"></script>
 </body>
+
 </html>
