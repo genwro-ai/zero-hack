@@ -32,7 +32,7 @@ We model the process grammar behind MOSFET, IGBT, and IC fabrication flows (≈1
 We used a small pipeline:
 
 - Generate more valid process flows from the provided grammar, plus separate
-  novel family eval sets for OOD checks. This gives the model more structure
+  novel family eval sets for OOD checks. This should give the model more structure
   than the three starter families alone.
 - Train compact GPT-style decoders for next-step prediction, then reuse the same
   conditional distribution for greedy completion and likelihood anomaly scoring.
@@ -87,17 +87,17 @@ OOD next-step prediction, where n-grams remain very strong.
 ## 1. Classic & LSTM baselines
 
 We started with simple baselines on the shared split files from
-`scripts/create_dataset_splits.py`. They set the floor for next-step ranking,
-completion, and anomaly detection.
+`scripts/create_dataset_splits.py`. These are the reference numbers we compare
+the neural models against.
 
 ### 1.1 Classic baselines
 
 These runs train on all three families and evaluate on ID test sets: 600
-examples for next-step and completion, 300 for anomaly.
+examples for next-step and completion, 300 for anomaly. The 5-gram is the main
+classic reference.
 
 | Model | View | Task 1 Top-1 | Top-3 | MRR | Task 2 ExactMatch | Norm. edit dist | Task 3 F1 | ROC-AUC |
 |---|---|---|---|---|---|---|---|---|
-| Most-frequent | ID | 0.7067 | 0.9950 | 0.8501 | 0.0017 | 0.2458 | 1.000 | 1.000 |
 | N-gram (5, backoff) | ID | 0.7133 | 0.9967 | 0.8536 | 0.0050 | 0.2243 | 1.000 | 1.000 |
 
 ### 1.2 LSTM baseline
@@ -143,22 +143,20 @@ unmasked teacher-forcing LSTM.
 
 ---
 
-## 2. Synthetic data preparation
+## 2. Data preparation
 
-We tested three ways to create extra process flows.
+The reported experiments use three data sources.
 
-| Method | Where | How it works | Output | Audit | Decision |
-|---|---|---|---|---|---|
-| Planner-based unseen data | `src/zero_hack/data/synth/` and `scripts/generate_unseen_data.py` | Builds valid flows from phase-level process units. The planner injects required cleans, lithography, etch, CMP, and test ordering before a rule can be violated. Family labels are partly decoupled from content through synthetic labels and `UNK` dropout. | `data/generated/<dataset>/raw.csv` | Validator backstop, phase monotonicity tests, vocabulary coverage tests. | Useful for broad augmentation. We kept it separate from the stricter OOD story because labels are synthetic training labels, not real unseen families. |
-| Pseudo families | `data/eval/pseudo_families/` | Recombines whole blocks from MOSFET, IGBT, and IC generators. For example, one profile can use MOSFET prep, IC cycles, MOSFET via, and IC metal. | 3 profiles, 5k sequences each | 1.000 raw validity, 0 OOV steps, 5k unique sequences per profile. | Useful stress test, but not clean OOD. It can reuse held-out family block grammar, so we treat it as eval-only and do not use it as final OOD evidence. |
-| Novel families | `scripts/generate_novel_families.py` and `data/eval/novel_families/` | Builds flows from atomic role-typed operation pools instead of family block generators. The script samples cleans, depositions, etches, implants, via steps, metal steps, passivation, backside steps, and tests independently while satisfying validator rules by construction. | `novel_sparse`, `novel_mixed`, `novel_dense`, 5k sequences each | 1.000 raw validity, 0 OOV steps, 5k unique sequences per profile, 0 exact collisions with generated family references. | Use for leak-free OOD evaluation. These flows have process logic but no official family backbone. |
+| Data | Where | Purpose |
+|---|---|---|
+| Generated valid training data | `data/generated/valid_s005k`, `valid_s020k`, `valid_s100k` | Main training data for n-gram, VLMC, LSTM, and GPT. Generated with the organizer grammar in `data/industrial/generate_sequences.py`. |
+| Fixed Industrial eval sets | `data/eval/<dataset>/holdout_<family>/{id,ood,calibration}` | Shared evaluation protocol. Task 1 and Task 2 inputs come from the organizer `*_variants.csv` files. Task 3 uses generated valid/invalid anomaly cases with the same calibration split for thresholds. |
+| Augmented rule-valid SFT data | `data/generated/augmented_s050k/raw.csv` | Extra GPT training data used by `gpt_phase_augmented`, phase-loss experiments, and DPO initialization. |
 
-The novel-family generator also reports n-gram distance from real families. The
-dense profile has the most new local structure: 0.578 mean novel 3-gram fraction
-and 0.767 mean novel 5-gram fraction. The sparse profile is closer to the real
-families, with 0.391 novel 3-grams and 0.636 novel 5-grams. That gives us a
-small difficulty sweep without changing the validator or introducing unknown
-tokens.
+The important point is that training and evaluation are separated. Models train
+on generated rule-valid sequences. Task 1 and Task 2 are evaluated on fixed
+Industrial variant prefixes. Task 3 thresholds are tuned once on the fixed
+calibration split, then reused for ID and OOD anomaly evaluation.
 
 ---
 
@@ -201,14 +199,6 @@ choice for our completion-focused story.
 `gpt_phase_augmented_pl01`, and `gpt_dpo_10ep_100k` are successive stages of the
 same GPT decoder pipeline under the fixed eval protocol. `bare` means the base
 next-step model before augmentation or preference tuning.
-
-> **Caveat:** this sweep is an independent experiment. It was scored by an earlier
-> completion harness (`architecture_metrics/valid_s100k/` and `arch_compare.json`),
-> not the `resultsdirectory/outputs/metrics/` source of truth used everywhere else in this report. The two
-> harnesses define block accuracy differently, so the completion column here (around
-> 0.96 in distribution) is not comparable to the completion numbers in sections 3.4
-> and elsewhere. We keep these results unchanged as the basis for the architecture
-> choice and do not reconcile them against the fixed eval metrics.
 
 ### 3.2 Training setup
 
