@@ -12,7 +12,17 @@
 
 ## TL;DR
 
-We built a synthetic process-grammar generator and trained compact sequence decoders to model MOSFET, IGBT, and IC fabrication flows, scoring them on next-step prediction, completion, anomaly detection, and a leave-one-family-out OOD split. In distribution, a tuned 5-gram, LSTM, and GPT-style decoder all land near 0.69 top-1 next-step accuracy and near-perfect top-3. Likelihood-based anomaly detection is almost solved in distribution, but the OOD case is where the problem becomes interesting: the same ID-calibrated threshold collapses to all-anomaly predictions on the held-out family, so F1 sits at the 0.667 all-positive baseline even when ROC-AUC still shows useful ranking signal.
+We built a reproducible benchmark pipeline for semiconductor process sequences:
+generated rule-valid training data, fixed Industrial eval sets, classical
+baselines, LSTM baselines, GPT-style decoders, and validator-guided fine-tuning.
+The main lesson is that process sequences have two regimes. Local next-step
+transitions transfer so well that tuned n-grams and bare decoders are very hard
+to beat on OOD Task 1. Global sequence likelihood is where neural models help:
+augmented GPT improves OOD anomaly ROC-AUC, and DPO sharply improves
+in-distribution rule-violation discrimination. The remaining failure mode is
+calibration under distribution shift: an F1-tuned anomaly threshold can collapse
+to one-class predictions on the held-out family even when ROC-AUC still shows
+ranking signal.
 
 ---
 
@@ -131,19 +141,8 @@ LSTM variants.
 We also tested masked completion decoding for the LSTMs, where the decoder avoids
 invalid output tokens during completion. This is completion-only, so it does not
 change next-step or anomaly metrics. It helps teacher-forcing ID edit distance
-slightly but hurts OOD completion, so the main comparison table uses the
-unmasked teacher-forcing LSTM.
-
-| Completion decoder | View | ExactMatch | Norm. edit dist | Token acc | Block acc |
-|---|---|---:|---:|---:|---:|
-| Teacher forcing | ID | 0.003 | 0.237 | 0.425 | 0.702 |
-| Teacher forcing + mask | ID | 0.003 | 0.225 | 0.430 | 0.702 |
-| Scheduled sampling | ID | 0.004 | 0.222 | 0.435 | 0.690 |
-| Scheduled sampling + mask | ID | 0.004 | 0.222 | 0.435 | 0.690 |
-| Teacher forcing | OOD | 0.000 | 0.467 | 0.203 | 0.516 |
-| Teacher forcing + mask | OOD | 0.000 | 0.498 | 0.172 | 0.467 |
-| Scheduled sampling | OOD | 0.000 | 0.526 | 0.179 | 0.389 |
-| Scheduled sampling + mask | OOD | 0.000 | 0.526 | 0.179 | 0.387 |
+slightly (`0.237` to `0.225`) but hurts OOD completion (`0.467` to `0.498`), so
+the main comparison table uses the unmasked teacher-forcing LSTM.
 
 ---
 
@@ -276,8 +275,8 @@ failure: OOD F1 remains 0.667 because the tuned threshold still predicts a
 single class. The fact that OOD ROC-AUC remains much higher than F1 in some runs
 means the likelihood scores still rank valid vs. invalid sequences, but the
 F1-selected threshold is the wrong operating point after distribution shift. So
-DPO is a good result to show for validator-driven preference tuning, not the
-all-task winner.
+DPO is useful as validator-driven preference tuning: it turns symbolic rule
+checks into a training signal and makes ID rule-discrimination much sharper.
 
 The other clear tradeoff is Task 1 generalization. On ID next-step, the reported
 10-epoch DPO model is the strongest neural row (0.693 top-1), narrowly above the
@@ -359,7 +358,7 @@ See [README.md](README.md) for the full data/eval layout.
 
 ## What worked / What didn't
 
-- **Worked:** Generating rule-valid sequences at scale (100k per family) with the validator as a backstop. Plain sequence likelihood is a near-perfect in-distribution anomaly detector, both for the 5-gram and GPT decoder (ROC-AUC near 1.0). The fixed leave-one-family-out eval sets give us a clean ID/OOD split. Augmented SFT improves OOD anomaly ranking, and 10-epoch DPO on validity-labeled pairs sharply improves ID anomaly discrimination (AUC 0.981 to about 1.000). For ID next-step, the reported DPO model is competitive with or slightly above the tuned n-gram.
+- **Worked:** Generating rule-valid sequences at scale (100k per family) with the validator as a backstop. Plain sequence likelihood is a near-perfect in-distribution anomaly detector, both for the 5-gram and GPT decoder (ROC-AUC near 1.0). The fixed leave-one-family-out eval sets give us a clean ID/OOD split. Augmented SFT improves OOD anomaly ranking, and 10-epoch DPO turns validity-labeled pairs into much sharper ID rule-discrimination (AUC 0.981 to about 1.000). For ID next-step, the reported DPO model is competitive with or slightly above the tuned n-gram.
 - **Didn't:** OOD next-step and thresholded OOD anomaly detection. For Task 1 on the held-out family, the n-gram and bare GPT remain stronger than the augmented/DPO neural models, which suggests that our fine-tuning over-specialized the local transition distribution. For anomaly detection, the ID-tuned threshold does not transfer to an unseen family, so several runs collapse to predicting every OOD anomaly sample as one class: F1 falls to the all-positive baseline even when ROC-AUC still shows useful ranking. Positional encoding choice barely moved the ID metrics, so there was no clear winner and we picked ALiBi for its OOD completion. Scheduled sampling did not beat teacher forcing at this scale. Exact-match completion stays near zero, since the sequences are long and many continuations are equally valid.
 
 ## What we'd do with another 36 hours
@@ -382,18 +381,13 @@ uses 100k pairs, 10 epochs, DPO temperature 0.1, SFT weight 0.3, lr 5e-6, batch
 the held-out family stays unseen. This is a strong ID anomaly result, but not a
 final answer to OOD completion.
 
-**Online RL (GRPO), implemented with an initial run.** `scripts/grpo_finetune.py` and `zero_hack.models.grpo` sample a group of completions per prompt, score each with a reward, and update on group-relative advantages: each completion's advantage is its reward standardized within the group (subtract the group-mean reward, divide by the group-std), and the policy is pushed to raise the log-probability of above-average completions, with a k3 KL penalty back to the reference policy. The reward is multiplicative on purpose. A validity gate is 1 for a valid completion (or a graded `max(0, 1 - n_violations / len)`), and a quality term measures fidelity to the gold suffix through block, token, and exact accuracy plus block diversity, with a small termination/truncation adjustment. A binary validity reward would give no within-group spread once the policy is mostly rule-compliant, so the fidelity terms keep the advantage informative and block the "shortest valid tail" hack. Defaults are a group size of 8 and a KL coefficient of 0.02.
-
-Initial GRPO training-log findings (`outputs/slurm`, `valid_s010k`, holdout
-IGBT, prompts from MOSFET + IC, 200 steps): the policy stays fully rule-compliant
-throughout (rollout validity 1.000 at every logged step) and holds rollout block
-accuracy around 0.94-0.96, while the KL to the reference stays small (about 0.07
-at the end). Mean reward hovers around 1.2-1.3 with no clear upward trend over
-the run, and exact match stays at 0. So the run confirms GRPO trains stably and
-keeps completions valid and high-fidelity, but does not yet show a clear
-completion gain. These are training-rollout numbers, not held-out eval; the full
-before-vs-after completion matrix has not finished, so we do not yet quote ID/OOD
-GRPO eval metrics.
+**Online RL (GRPO), implemented as a first pass.** GRPO samples multiple
+continuations per prefix, scores them with a validity-and-fidelity reward, and
+updates the policy using group-relative advantages with a KL penalty to the
+reference model. The initial run was stable: rollout validity stayed at 1.000,
+block accuracy stayed around 0.94-0.96, and KL remained small. It did not yet
+show a clear held-out completion gain, so we keep GRPO as future work rather than
+a reported result.
 
 Other things we would do:
 
